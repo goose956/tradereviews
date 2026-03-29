@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>You're All Set — ReviewEngine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col">
+
+  <main class="flex-1 flex items-center justify-center px-6 py-16">
+    <div class="max-w-lg w-full">
+      <h1 class="text-3xl font-extrabold text-center mb-10">Welcome to ReviewEngine!</h1>
+
+      <ol class="space-y-6">
+        <!-- Step 1 -->
+        <li class="flex items-start gap-4">
+          <span class="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold">&#10003;</span>
+          <div>
+            <h2 class="font-semibold text-lg">Payment complete</h2>
+            <p class="text-gray-500 text-sm">Your subscription is active. You'll receive a receipt by email.</p>
+          </div>
+        </li>
+
+        <!-- Step 2 -->
+        <li class="flex items-start gap-4">
+          <span class="flex-shrink-0 w-10 h-10 rounded-full bg-green-600 text-white flex items-center justify-center font-bold">2</span>
+          <div>
+            <h2 class="font-semibold text-lg">Connect your Google Business Profile</h2>
+            <p class="text-gray-500 text-sm mb-3">
+              This lets us fetch your reviews and post AI-drafted replies on your behalf.
+            </p>
+            <a id="googleBtn" href="#"
+               class="inline-flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition text-sm font-medium">
+              <svg class="w-5 h-5" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 0 1 0-9.18l-7.98-6.19a24.01 24.01 0 0 0 0 21.56l7.98-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+              Connect Google
+            </a>
+          </div>
+        </li>
+
+        <!-- Step 3 -->
+        <li class="flex items-start gap-4">
+          <span class="flex-shrink-0 w-10 h-10 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold">3</span>
+          <div>
+            <h2 class="font-semibold text-lg">Save our number in your contacts</h2>
+            <p class="text-gray-500 text-sm">
+              Add <strong class="text-gray-800" id="botNumber">+44 XXX XXX XXXX</strong> to your contacts as <em>"ReviewEngine Bot"</em>.
+            </p>
+          </div>
+        </li>
+
+        <!-- Step 4 -->
+        <li class="flex items-start gap-4">
+          <span class="flex-shrink-0 w-10 h-10 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold">4</span>
+          <div>
+            <h2 class="font-semibold text-lg">You're ready!</h2>
+            <p class="text-gray-500 text-sm">
+              Open WhatsApp and text us a customer's number and name, e.g.<br />
+              <code class="bg-gray-100 px-2 py-0.5 rounded text-green-700 text-xs">07804563456 John</code><br />
+              We'll do the rest.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="mt-10 text-center">
+        <a id="portalLink" href="#"
+           class="inline-block px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow transition">
+          Go to My Account &rarr;
+        </a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="bg-gray-900 text-gray-400 text-sm text-center py-6">
+    <p>&copy; 2026 ReviewEngine. All rights reserved.</p>
+  </footer>
+
+  <script>
+    // Read business_id from the URL query string (?business_id=xxx)
+    const params = new URLSearchParams(window.location.search);
+    const businessId = params.get('business_id');
+
+    if (businessId) {
+      const googleBtn = document.getElementById('googleBtn');
+      googleBtn.href = `/auth/google/login?business_id=${encodeURIComponent(businessId)}`;
+      const portalLink = document.getElementById('portalLink');
+      portalLink.href = `/portal.html?business_id=${encodeURIComponent(businessId)}`;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Account — ReviewEngine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .tab-active { border-color: #16a34a; color: #16a34a; background: #f0fdf4; }
+    .badge { display:inline-block; padding:2px 10px; border-radius:9999px; font-size:.75rem; font-weight:600; }
+    .badge-request_sent { background:#dbeafe; color:#1e40af; }
+    .badge-follow_up_sent { background:#fef9c3; color:#854d0e; }
+    .badge-review_request { background:#dbeafe; color:#1e40af; }
+    .badge-review_link { background:#dcfce7; color:#166534; }
+    .badge-follow_up { background:#fef9c3; color:#854d0e; }
+    .badge-negative_alert { background:#fee2e2; color:#991b1b; }
+    .badge-draft_notification { background:#f3e8ff; color:#6b21a8; }
+    .badge-auto_reply_notification { background:#dbeafe; color:#1e40af; }
+    .badge-auto_replied { background:#d1fae5; color:#065f46; }
+    .badge-auto_reply_failed { background:#fee2e2; color:#991b1b; }
+    .badge-text { background:#e5e7eb; color:#374151; }
+    .badge-clicked_great { background:#dcfce7; color:#166534; }
+    .badge-clicked_bad { background:#fee2e2; color:#991b1b; }
+    .badge-review_posted { background:#d1fae5; color:#065f46; }
+    .badge-pending_approval { background:#fef9c3; color:#854d0e; }
+    .badge-posted { background:#dbeafe; color:#1e40af; }
+    .badge-rejected { background:#fee2e2; color:#991b1b; }
+    .badge-awaiting_edit { background:#f3e8ff; color:#6b21a8; }
+    .badge-campaign { background:#ede9fe; color:#5b21b6; }
+    .badge-pending { background:#fef9c3; color:#854d0e; }
+    .badge-sending { background:#dbeafe; color:#1e40af; }
+    .badge-completed { background:#dcfce7; color:#166534; }
+    .badge-partial { background:#fef9c3; color:#854d0e; }
+    .badge-failed { background:#fee2e2; color:#991b1b; }
+    .badge-draft { background:#e5e7eb; color:#374151; }
+    .badge-sent { background:#dbeafe; color:#1e40af; }
+    .badge-paid { background:#dcfce7; color:#166534; }
+    .badge-overdue { background:#fee2e2; color:#991b1b; }
+    .badge-cancelled { background:#f3e8ff; color:#6b21a8; }
+    .badge-accepted { background:#dcfce7; color:#166534; }
+    .badge-declined { background:#fee2e2; color:#991b1b; }
+    .badge-expired { background:#fef9c3; color:#854d0e; }
+    .toggle-bg { width:44px; height:24px; border-radius:9999px; transition:background .2s; cursor:pointer; }
+    .toggle-dot { width:20px; height:20px; border-radius:9999px; background:#fff; transition:transform .2s; position:absolute; top:2px; left:2px; }
+    dialog::backdrop { background:rgba(0,0,0,.4); }
+    dialog { border:none; border-radius:.75rem; padding:0; max-width:540px; width:90%; }
+    .toast{position:fixed;top:1.5rem;right:1.5rem;left:1.5rem;z-index:9999;padding:.75rem 1.25rem;border-radius:.5rem;color:#fff;font-weight:600;font-size:.875rem;box-shadow:0 4px 12px rgba(0,0,0,.15);transform:translateY(-120%);transition:transform .3s ease;text-align:center;}
+    .toast.show{transform:translateY(0);}
+    @media(min-width:640px){
+      .toast{left:auto;right:1.5rem;max-width:360px;transform:translateX(120%);text-align:left;}
+      .toast.show{transform:translateX(0);}
+    }
+    .toast-success{background:#16a34a;}
+    .toast-error{background:#dc2626;}
+    .scrollbar-hide::-webkit-scrollbar{display:none;}
+    .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none;}
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+
+  <!-- ───── Toast container ───── -->
+  <div id="toastContainer"></div>
+
+  <!-- ───── Header ───── -->
+  <header class="bg-green-700 text-white">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <h1 class="text-lg sm:text-xl font-bold">ReviewEngine</h1>
+        <span id="headerBizName" class="text-green-200 text-xs sm:text-sm truncate max-w-[180px] sm:max-w-none"></span>
+      </div>
+      <button onclick="doLogout()" class="text-green-200 hover:text-white text-xs sm:text-sm font-medium transition">Logout</button>
+    </div>
+  </header>
+
+  <!-- ───── Stats ───── -->
+  <section class="max-w-5xl mx-auto px-4 sm:px-6 mt-6">
+    <div class="grid grid-cols-3 gap-2 sm:gap-4 text-center">
+      <div class="bg-white rounded-lg shadow p-3 sm:p-4">
+        <p class="text-xl sm:text-2xl font-bold text-green-700" id="statRequests">0</p>
+        <p class="text-[10px] sm:text-xs text-gray-500 mt-1">Review Requests</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-3 sm:p-4">
+        <p class="text-xl sm:text-2xl font-bold text-green-700" id="statPositive">0</p>
+        <p class="text-[10px] sm:text-xs text-gray-500 mt-1">Positive Responses</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-3 sm:p-4">
+        <p class="text-xl sm:text-2xl font-bold text-green-700" id="statDrafts">0</p>
+        <p class="text-[10px] sm:text-xs text-gray-500 mt-1">Pending Reply Drafts</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── Tabs ───── -->
+  <section class="max-w-5xl mx-auto px-4 sm:px-6 mt-8">
+    <div class="flex border-b border-gray-200 gap-1 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 rounded-t-lg tab-active whitespace-nowrap" data-tab="settings">Settings</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="customers">Customers</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="messages">Messages</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="campaigns">Campaigns</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="invoices">Invoices</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="quotes">Quotes</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="accounts">Accounts</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="drafts">Drafts</button>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Settings ───── -->
+  <section id="panel-settings" class="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+    <form id="settingsForm" class="bg-white rounded-lg shadow p-4 sm:p-6 space-y-5">
+      <h2 class="text-lg font-bold mb-2">Business Info</h2>
+
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
+          <input id="fBizName" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Owner Name</label>
+          <input id="fOwnerName" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Trade Type</label>
+          <select id="fTradeType" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+            <option value="">Select</option>
+            <option value="electrician">Electrician</option>
+            <option value="plumber">Plumber</option>
+            <option value="builder">Builder</option>
+            <option value="roofer">Roofer</option>
+            <option value="landscaper">Landscaper</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+          <input id="fPhone" type="tel" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input id="fEmail" type="email" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Google Review Link</label>
+          <input id="fReviewLink" type="url" placeholder="https://g.page/r/..." class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+        </div>
+      </div>
+
+      <hr class="my-4" />
+
+      <h2 class="text-lg font-bold mb-2">Auto-Reply to Google Reviews</h2>
+
+      <div class="flex items-center gap-4">
+        <div class="relative">
+          <input id="fAutoReply" type="checkbox" class="sr-only peer" />
+          <div class="toggle-bg bg-gray-300 peer-checked:bg-green-500" onclick="this.previousElementSibling.click()"></div>
+          <div class="toggle-dot peer-checked:translate-x-5" onclick="this.previousElementSibling.previousElementSibling.click()"></div>
+        </div>
+        <label class="text-sm font-medium text-gray-700">Automatically reply to new Google reviews</label>
+      </div>
+
+      <div id="autoReplyOptions" class="mt-3 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Positive review threshold (stars &ge;)</label>
+          <select id="fAutoReplyThreshold" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+            <option value="3">3 stars</option>
+            <option value="4" selected>4 stars</option>
+            <option value="5">5 stars</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Positive review reply</label>
+          <textarea id="fAutoReplyPositive" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Thank you so much for your kind review, {reviewer_name}! We really appreciate your support and are glad you had a great experience with {business_name}."></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Negative review reply</label>
+          <textarea id="fAutoReplyNegative" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Thank you for your feedback, {reviewer_name}. We're sorry your experience didn't meet expectations and will be in touch to address any concerns."></textarea>
+        </div>
+        <p class="text-xs text-gray-400">Use <code>{reviewer_name}</code> and <code>{business_name}</code> as placeholders.</p>
+      </div>
+
+      <hr class="my-4" />
+
+      <h2 class="text-lg font-bold mb-2">Follow-up Settings</h2>
+
+      <div class="flex items-center gap-4">
+        <div class="relative">
+          <input id="fFollowUp" type="checkbox" class="sr-only peer" />
+          <div class="toggle-bg bg-gray-300 peer-checked:bg-green-500" onclick="this.previousElementSibling.click()"></div>
+          <div class="toggle-dot peer-checked:translate-x-5" onclick="this.previousElementSibling.previousElementSibling.click()"></div>
+        </div>
+        <label class="text-sm font-medium text-gray-700">Automatically follow up with customers who haven't responded</label>
+      </div>
+
+      <div id="followUpOptions" class="mt-3 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">1st follow-up message</label>
+          <textarea id="fFollowUpMsg" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Hi {first_name}, just a friendly reminder from {business_name} — we'd really appreciate your feedback! It only takes 30 seconds. 😊"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">2nd follow-up message</label>
+          <textarea id="fFollowUpMsg2" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Hi {first_name}, we don't want to be a pest! But if you have a spare moment, {business_name} would love to hear how we did. Thank you! 🙏"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">3rd follow-up message</label>
+          <textarea id="fFollowUpMsg3" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Hi {first_name}, last reminder from {business_name} — your feedback really helps us improve. We'd be grateful if you could share your experience. Thanks! ⭐"></textarea>
+        </div>
+        <p class="text-xs text-gray-400">Use <code>{first_name}</code> and <code>{business_name}</code> as placeholders.</p>
+        <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Days before follow-up</label>
+          <select id="fFollowUpDays" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+            <option value="1">1 day</option>
+            <option value="2">2 days</option>
+            <option value="3" selected>3 days</option>
+            <option value="5">5 days</option>
+            <option value="7">7 days</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Max follow-ups per customer</label>
+          <select id="fMaxFollowUps" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+          </select>
+        </div>
+        </div>
+      </div>
+
+      <hr class="my-4" />
+
+      <h2 class="text-lg font-bold mb-2">Business Address</h2>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div class="sm:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
+          <input id="fAddress" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" placeholder="123 High Street" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">City / Town</label>
+          <input id="fCity" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Postcode / ZIP</label>
+          <input id="fPostcode" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Country</label>
+          <select id="fCountry" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+            <option value="GB">United Kingdom</option>
+            <option value="US">United States</option>
+            <option value="AU">Australia</option>
+            <option value="CA">Canada</option>
+            <option value="IE">Ireland</option>
+            <option value="NZ">New Zealand</option>
+            <option value="ZA">South Africa</option>
+            <option value="DE">Germany</option>
+            <option value="FR">France</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+      </div>
+
+      <hr class="my-4" />
+
+      <h2 class="text-lg font-bold mb-2">Tax &amp; Invoicing</h2>
+
+      <div class="flex items-center gap-4 mb-4">
+        <div class="relative">
+          <input id="fConfirmBeforeSend" type="checkbox" class="sr-only peer" />
+          <div class="toggle-bg bg-gray-300 peer-checked:bg-green-500" onclick="this.previousElementSibling.click()"></div>
+          <div class="toggle-dot peer-checked:translate-x-5" onclick="this.previousElementSibling.previousElementSibling.click()"></div>
+        </div>
+        <div>
+          <label class="text-sm font-medium text-gray-700">Preview invoices &amp; quotes before sending</label>
+          <p class="text-xs text-gray-400">When enabled, you'll see a preview in WhatsApp with Send/Cancel buttons before anything goes to the customer.</p>
+        </div>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Tax Label</label>
+          <select id="fTaxLabel" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+            <option value="VAT">VAT</option>
+            <option value="GST">GST</option>
+            <option value="Sales Tax">Sales Tax</option>
+            <option value="HST">HST</option>
+            <option value="None">No Tax</option>
+          </select>
+          <p class="text-xs text-gray-400 mt-1">UK = VAT, AU/NZ = GST, US = Sales Tax, CA = HST</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Tax Number</label>
+          <input id="fTaxNumber" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" placeholder="e.g. GB123456789" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Tax Rate (%)</label>
+          <input id="fTaxRate" type="number" step="0.1" min="0" max="100" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" value="20" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+          <select id="fCurrency" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+            <option value="GBP">GBP (£)</option>
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="AUD">AUD ($)</option>
+            <option value="CAD">CAD ($)</option>
+            <option value="NZD">NZD ($)</option>
+            <option value="ZAR">ZAR (R)</option>
+          </select>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Default Payment Terms</label>
+          <input id="fPaymentTerms" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" placeholder="Payment due within 14 days" />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Accepted Payment Methods</label>
+          <div class="flex flex-wrap gap-3" id="payMethodCheckboxes">
+            <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="cash" class="pay-method-cb accent-green-600" /> 💷 Cash</label>
+            <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="bank_transfer" class="pay-method-cb accent-green-600" /> 🏦 Bank Transfer</label>
+            <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="card" class="pay-method-cb accent-green-600" /> 💳 Card</label>
+            <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="paypal" class="pay-method-cb accent-green-600" /> PayPal</label>
+            <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="stripe" class="pay-method-cb accent-green-600" /> Stripe</label>
+            <label class="flex items-center gap-1.5 text-sm cursor-pointer"><input type="checkbox" value="other" class="pay-method-cb accent-green-600" /> Other</label>
+          </div>
+          <p class="text-xs text-gray-400 mt-1">Shown on invoices so customers know how to pay</p>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Online Payment Link</label>
+          <input id="fPaymentLink" type="url" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="e.g. https://paypal.me/yourname or Stripe payment link" />
+          <p class="text-xs text-gray-400 mt-1">PayPal.me links auto-add the invoice amount. Sent to customers with the invoice.</p>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Bank / Payment Details</label>
+          <textarea id="fBankDetails" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Sort code: 12-34-56&#10;Account: 12345678"></textarea>
+          <p class="text-xs text-gray-400 mt-1">Shown on invoices for bank transfer payments</p>
+        </div>
+      </div>
+
+      <div class="pt-3">
+        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-lg shadow transition">
+          Save Changes
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ───── Tab: Customers ───── -->
+  <section id="panel-customers" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <table class="w-full text-sm min-w-[600px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Name</th>
+            <th class="px-4 py-3 text-left">Phone</th>
+            <th class="px-4 py-3 text-left">Status</th>
+            <th class="px-4 py-3 text-left">Follow-ups</th>
+            <th class="px-4 py-3 text-left">Offers</th>
+            <th class="px-4 py-3 text-left">Requested</th>
+          </tr>
+        </thead>
+        <tbody id="customersBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noCustomers" class="hidden text-center text-gray-400 py-8">No customers yet. Send a review request via WhatsApp!</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Drafts ───── -->
+  <section id="panel-drafts" class="max-w-5xl mx-auto px-6 py-6 hidden">
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <table class="w-full text-sm min-w-[600px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Reviewer</th>
+            <th class="px-4 py-3 text-left">Rating</th>
+            <th class="px-4 py-3 text-left">Review</th>
+            <th class="px-4 py-3 text-left">AI Reply</th>
+            <th class="px-4 py-3 text-left">Status</th>
+          </tr>
+        </thead>
+        <tbody id="draftsBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noDrafts" class="hidden text-center text-gray-400 py-8">No review drafts yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Messages ───── -->
+  <section id="panel-messages" class="max-w-5xl mx-auto px-6 py-6 hidden">
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <table class="w-full text-sm min-w-[600px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Date</th>
+            <th class="px-4 py-3 text-left">To</th>
+            <th class="px-4 py-3 text-left">Type</th>
+            <th class="px-4 py-3 text-left">Message</th>
+            <th class="px-4 py-3 text-left">Status</th>
+          </tr>
+        </thead>
+        <tbody id="messagesBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noMessages" class="hidden text-center text-gray-400 py-8">No messages sent yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Campaigns ───── -->
+  <section id="panel-campaigns" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+
+    <!-- Compose Offer -->
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6 mb-6">
+      <h2 class="text-lg font-bold mb-1">Send an Offer</h2>
+      <p class="text-sm text-gray-500 mb-4">
+        Message your opted-in customers. Daily limit: <strong>50 messages</strong>.
+        Only customers who agreed to receive offers will be contacted.
+      </p>
+
+      <div class="flex items-center gap-3 mb-4">
+        <div class="bg-green-50 border border-green-200 rounded-lg px-4 py-2 text-center">
+          <span id="optedInCount" class="text-2xl font-bold text-green-700">0</span>
+          <p class="text-xs text-gray-500">Opted-in customers</p>
+        </div>
+      </div>
+
+      <form id="campaignForm">
+        <div class="mb-3">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Message</label>
+          <textarea id="campaignMsg" rows="4" maxlength="1000"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm"
+            placeholder="e.g. Hi! 👋 Just a heads up from Smiths Plumbing — we have 20% off all boiler services this month. Reply to book!"></textarea>
+          <p class="text-xs text-gray-400 mt-1"><span id="campaignCharCount">0</span>/1000 characters</p>
+        </div>
+        <button type="submit" id="campaignSendBtn"
+          class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed">
+          Send Campaign
+        </button>
+      </form>
+    </div>
+
+    <!-- Campaign History -->
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">Campaign History</h3>
+      <table class="w-full text-sm min-w-[500px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Date</th>
+            <th class="px-4 py-3 text-left">Message</th>
+            <th class="px-4 py-3 text-left">Sent</th>
+            <th class="px-4 py-3 text-left">Failed</th>
+            <th class="px-4 py-3 text-left">Status</th>
+          </tr>
+        </thead>
+        <tbody id="campaignsBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noCampaigns" class="hidden text-center text-gray-400 py-8">No campaigns sent yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Invoices ───── -->
+  <section id="panel-invoices" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+
+    <!-- Create Invoice -->
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6 mb-6">
+      <h2 class="text-lg font-bold mb-1">Create Invoice</h2>
+      <p class="text-sm text-gray-500 mb-4">Add line items and send to your customer.</p>
+
+      <form id="invoiceForm" class="space-y-4">
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+            <select id="invCustomer" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+              <option value="">Select customer…</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+            <input id="invDueDate" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
+          <input id="invTerms" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" placeholder="Payment due within 14 days" />
+        </div>
+
+        <!-- Line items -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Line Items</label>
+          <div id="invLineItems" class="space-y-2"></div>
+          <button type="button" onclick="addInvLineItem()" class="mt-2 text-sm text-green-600 hover:text-green-700 font-medium">+ Add Line Item</button>
+        </div>
+
+        <!-- Totals -->
+        <div class="bg-gray-50 rounded-lg p-4 text-sm space-y-1">
+          <div class="flex justify-between"><span>Subtotal</span><span id="invSubtotal">0.00</span></div>
+          <div class="flex justify-between"><span id="invTaxLabel">VAT (20%)</span><span id="invTaxAmount">0.00</span></div>
+          <div class="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total</span><span id="invTotal">0.00</span></div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+          <textarea id="invNotes" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Optional notes for the customer"></textarea>
+        </div>
+
+        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-lg shadow transition">
+          Create Invoice
+        </button>
+      </form>
+    </div>
+
+    <!-- Invoice History -->
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">Invoice History</h3>
+      <table class="w-full text-sm min-w-[700px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Number</th>
+            <th class="px-4 py-3 text-left">Customer</th>
+            <th class="px-4 py-3 text-left">Total</th>
+            <th class="px-4 py-3 text-left">Status</th>
+            <th class="px-4 py-3 text-left">Paid Via</th>
+            <th class="px-4 py-3 text-left">Due</th>
+            <th class="px-4 py-3 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="invoicesBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noInvoices" class="hidden text-center text-gray-400 py-8">No invoices yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Quotes ───── -->
+  <section id="panel-quotes" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+
+    <!-- Create Quote -->
+    <div class="bg-white rounded-lg shadow p-4 sm:p-6 mb-6">
+      <h2 class="text-lg font-bold mb-1">Create Quote</h2>
+      <p class="text-sm text-gray-500 mb-4">Build a quote with line items and send it to your customer.</p>
+
+      <form id="quoteForm" class="space-y-4">
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+            <select id="quoCustomer" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+              <option value="">Select customer…</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Valid Until</label>
+            <input id="quoValidUntil" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+          </div>
+        </div>
+
+        <!-- Line items -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Line Items</label>
+          <div id="quoLineItems" class="space-y-2"></div>
+          <button type="button" onclick="addQuoLineItem()" class="mt-2 text-sm text-green-600 hover:text-green-700 font-medium">+ Add Line Item</button>
+        </div>
+
+        <!-- Totals -->
+        <div class="bg-gray-50 rounded-lg p-4 text-sm space-y-1">
+          <div class="flex justify-between"><span>Subtotal</span><span id="quoSubtotal">0.00</span></div>
+          <div class="flex justify-between"><span id="quoTaxLabel">VAT (20%)</span><span id="quoTaxAmount">0.00</span></div>
+          <div class="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total</span><span id="quoTotal">0.00</span></div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+          <textarea id="quoNotes" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Optional notes for the customer"></textarea>
+        </div>
+
+        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-lg shadow transition">
+          Create Quote
+        </button>
+      </form>
+    </div>
+
+    <!-- Quote History -->
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">Quote History</h3>
+      <table class="w-full text-sm min-w-[600px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Number</th>
+            <th class="px-4 py-3 text-left">Customer</th>
+            <th class="px-4 py-3 text-left">Total</th>
+            <th class="px-4 py-3 text-left">Status</th>
+            <th class="px-4 py-3 text-left">Valid Until</th>
+            <th class="px-4 py-3 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="quotesBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noQuotes" class="hidden text-center text-gray-400 py-8">No quotes yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Accounts ───── -->
+  <section id="panel-accounts" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-green-700" id="acctTotalPaid">£0.00</p>
+        <p class="text-xs text-gray-500 mt-1">Total Income (Paid)</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-yellow-600" id="acctTotalOutstanding">£0.00</p>
+        <p class="text-xs text-gray-500 mt-1">Outstanding Balance</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-blue-600" id="acctThisMonth">£0.00</p>
+        <p class="text-xs text-gray-500 mt-1">This Month's Income</p>
+      </div>
+    </div>
+
+    <!-- Monthly Breakdown -->
+    <div class="bg-white rounded-lg shadow overflow-x-auto mb-6">
+      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">Monthly Breakdown</h3>
+      <table class="w-full text-sm min-w-[400px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Month</th>
+            <th class="px-4 py-3 text-right">Paid</th>
+            <th class="px-4 py-3 text-right">Outstanding</th>
+            <th class="px-4 py-3 text-right">Invoices</th>
+          </tr>
+        </thead>
+        <tbody id="acctMonthsBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noAcctMonths" class="hidden text-center text-gray-400 py-8">No income data yet. Create and mark invoices as paid.</p>
+    </div>
+
+    <!-- All Invoices List -->
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">All Invoices</h3>
+      <table class="w-full text-sm min-w-[700px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Number</th>
+            <th class="px-4 py-3 text-left">Customer</th>
+            <th class="px-4 py-3 text-right">Total</th>
+            <th class="px-4 py-3 text-left">Status</th>
+            <th class="px-4 py-3 text-left">Paid Via</th>
+            <th class="px-4 py-3 text-left">Date</th>
+            <th class="px-4 py-3 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="acctInvoicesBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noAcctInvoices" class="hidden text-center text-gray-400 py-8">No invoices yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Footer ───── -->
+  <footer class="bg-gray-900 text-gray-400 text-sm text-center py-6 mt-12">
+    <p>&copy; 2026 ReviewEngine. All rights reserved.</p>
+  </footer>
+
+<script>
+// ── Auth check ───────────────────────────────────
+const reToken = localStorage.getItem('re_token');
+const reBizId = localStorage.getItem('re_business_id');
+
+if (!reToken || !reBizId) {
+  window.location.href = '/login.html';
+}
+
+// Verify token is still valid
+fetch('/auth/me', { headers: { 'Authorization': 'Bearer ' + reToken } })
+  .then(r => { if (!r.ok) { localStorage.clear(); window.location.href = '/login.html'; } })
+  .catch(() => { localStorage.clear(); window.location.href = '/login.html'; });
+
+const bizId = reBizId;
+const API = `/member/business/${bizId}`;
+
+async function doLogout() {
+  try {
+    await fetch('/auth/logout', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + reToken },
+    });
+  } catch {}
+  localStorage.removeItem('re_token');
+  localStorage.removeItem('re_business_id');
+  localStorage.removeItem('re_business_name');
+  window.location.href = '/login.html';
+}
+
+// ── Tabs ─────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => { t.classList.remove('tab-active'); t.classList.add('border-transparent'); });
+    tab.classList.add('tab-active'); tab.classList.remove('border-transparent');
+    const target = tab.dataset.tab;
+    document.querySelectorAll('[id^="panel-"]').forEach(p => p.classList.add('hidden'));
+    document.getElementById('panel-' + target).classList.remove('hidden');
+  });
+});
+
+// ── Load business info ───────────────────────────
+async function loadBusiness() {
+  const res = await fetch(API);
+  if (!res.ok) return;
+  const biz = await res.json();
+
+  document.getElementById('headerBizName').textContent = biz.business_name;
+  document.getElementById('fBizName').value = biz.business_name || '';
+  document.getElementById('fOwnerName').value = biz.owner_name || '';
+  document.getElementById('fTradeType').value = biz.trade_type || '';
+  document.getElementById('fPhone').value = biz.phone_number || '';
+  document.getElementById('fEmail').value = biz.email || '';
+  document.getElementById('fReviewLink').value = biz.google_review_link || '';
+  document.getElementById('fFollowUp').checked = !!biz.follow_up_enabled;
+  document.getElementById('fFollowUpDays').value = biz.follow_up_days || 3;
+  document.getElementById('fMaxFollowUps').value = biz.max_follow_ups || 2;
+  document.getElementById('fFollowUpMsg').value = biz.follow_up_message || '';
+  document.getElementById('fFollowUpMsg2').value = biz.follow_up_message_2 || '';
+  document.getElementById('fFollowUpMsg3').value = biz.follow_up_message_3 || '';
+  document.getElementById('fAutoReply').checked = !!biz.auto_reply_enabled;
+  document.getElementById('fAutoReplyThreshold').value = biz.auto_reply_threshold || 4;
+  document.getElementById('fAutoReplyPositive').value = biz.auto_reply_positive_msg || '';
+  document.getElementById('fAutoReplyNegative').value = biz.auto_reply_negative_msg || '';
+  document.getElementById('fConfirmBeforeSend').checked = !!biz.confirm_before_send;
+  document.getElementById('fAddress').value = biz.business_address || '';
+  document.getElementById('fCity').value = biz.business_city || '';
+  document.getElementById('fPostcode').value = biz.business_postcode || '';
+  document.getElementById('fCountry').value = biz.business_country || 'GB';
+  document.getElementById('fTaxLabel').value = biz.tax_label || 'VAT';
+  document.getElementById('fTaxNumber').value = biz.tax_number || '';
+  document.getElementById('fTaxRate').value = biz.tax_rate ?? 20;
+  document.getElementById('fCurrency').value = biz.currency || 'GBP';
+  document.getElementById('fPaymentTerms').value = biz.default_payment_terms || '';
+  document.getElementById('fBankDetails').value = biz.bank_details || '';
+  document.getElementById('fPaymentLink').value = biz.payment_link || '';
+  // Set accepted payment method checkboxes
+  const methods = (biz.accepted_payment_methods || 'cash,bank_transfer').split(',');
+  document.querySelectorAll('.pay-method-cb').forEach(cb => {
+    cb.checked = methods.includes(cb.value);
+  });
+  window._bizPaymentLink = biz.payment_link || '';
+  window._bizAcceptedMethods = biz.accepted_payment_methods || 'cash,bank_transfer';
+  // Store for invoice/quote forms
+  window._bizTaxLabel = biz.tax_label || 'VAT';
+  window._bizTaxRate = biz.tax_rate ?? 20;
+  window._bizCurrency = biz.currency || 'GBP';
+  toggleFollowUpOptions();
+  toggleAutoReplyOptions();
+}
+
+// ── Toggle follow-up options visibility ──────────
+const followUpCheckbox = document.getElementById('fFollowUp');
+function toggleFollowUpOptions() {
+  document.getElementById('followUpOptions').style.display = followUpCheckbox.checked ? 'block' : 'none';
+}
+followUpCheckbox.addEventListener('change', toggleFollowUpOptions);
+
+// ── Toggle auto-reply options visibility ─────────
+const autoReplyCheckbox = document.getElementById('fAutoReply');
+function toggleAutoReplyOptions() {
+  document.getElementById('autoReplyOptions').style.display = autoReplyCheckbox.checked ? 'block' : 'none';
+}
+autoReplyCheckbox.addEventListener('change', toggleAutoReplyOptions);
+
+// ── Save business settings ───────────────────────
+document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    business_name: document.getElementById('fBizName').value.trim(),
+    owner_name: document.getElementById('fOwnerName').value.trim(),
+    trade_type: document.getElementById('fTradeType').value,
+    phone_number: document.getElementById('fPhone').value.trim(),
+    email: document.getElementById('fEmail').value.trim(),
+    google_review_link: document.getElementById('fReviewLink').value.trim(),
+    follow_up_enabled: document.getElementById('fFollowUp').checked,
+    follow_up_days: parseInt(document.getElementById('fFollowUpDays').value),
+    max_follow_ups: parseInt(document.getElementById('fMaxFollowUps').value),
+    follow_up_message: document.getElementById('fFollowUpMsg').value.trim(),
+    follow_up_message_2: document.getElementById('fFollowUpMsg2').value.trim(),
+    follow_up_message_3: document.getElementById('fFollowUpMsg3').value.trim(),
+    auto_reply_enabled: document.getElementById('fAutoReply').checked,
+    auto_reply_threshold: parseInt(document.getElementById('fAutoReplyThreshold').value),
+    auto_reply_positive_msg: document.getElementById('fAutoReplyPositive').value.trim(),
+    auto_reply_negative_msg: document.getElementById('fAutoReplyNegative').value.trim(),
+    business_address: document.getElementById('fAddress').value.trim(),
+    business_city: document.getElementById('fCity').value.trim(),
+    business_postcode: document.getElementById('fPostcode').value.trim(),
+    business_country: document.getElementById('fCountry').value,
+    tax_label: document.getElementById('fTaxLabel').value,
+    tax_number: document.getElementById('fTaxNumber').value.trim(),
+    tax_rate: parseFloat(document.getElementById('fTaxRate').value) || 20,
+    currency: document.getElementById('fCurrency').value,
+    default_payment_terms: document.getElementById('fPaymentTerms').value.trim(),
+    bank_details: document.getElementById('fBankDetails').value.trim(),
+    accepted_payment_methods: [...document.querySelectorAll('.pay-method-cb:checked')].map(cb => cb.value).join(',') || 'cash',
+    payment_link: document.getElementById('fPaymentLink').value.trim(),
+    confirm_before_send: document.getElementById('fConfirmBeforeSend').checked,
+  };
+
+  // Remove empty strings so we don't overwrite with blanks
+  Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k]; });
+
+  const res = await fetch(API, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.ok) {
+    showToast('Settings updated successfully!', 'success');
+  } else {
+    showToast('Failed to save settings. Please try again.', 'error');
+  }
+});
+
+// ── Load stats ───────────────────────────────────
+async function loadStats() {
+  const res = await fetch(API + '/stats');
+  if (!res.ok) return;
+  const s = await res.json();
+  document.getElementById('statRequests').textContent = s.total_review_requests;
+  document.getElementById('statPositive').textContent = s.positive_responses;
+  document.getElementById('statDrafts').textContent = s.pending_drafts;
+}
+
+// ── Load customers table ─────────────────────────
+async function loadCustomers() {
+  const res = await fetch(API + '/customers');
+  if (!res.ok) return;
+  const customers = await res.json();
+  const tbody = document.getElementById('customersBody');
+  tbody.innerHTML = '';
+
+  if (!customers.length) {
+    document.getElementById('noCustomers').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('noCustomers').classList.add('hidden');
+
+  customers.forEach(c => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-gray-50';
+    const date = c.review_requested_at ? new Date(c.review_requested_at).toLocaleDateString() : '—';
+    const optIn = c.marketing_opt_in ? '<span class="text-green-600 font-semibold text-xs">✓ Opted in</span>' : '<span class="text-gray-400 text-xs">—</span>';
+    tr.innerHTML = `
+      <td class="px-4 py-3 font-medium">${esc(c.name)}</td>
+      <td class="px-4 py-3 text-gray-600">${esc(c.phone_number)}</td>
+      <td class="px-4 py-3"><span class="badge badge-${c.status}">${c.status.replace(/_/g, ' ')}</span></td>
+      <td class="px-4 py-3 text-gray-600">${c.follow_up_count || 0}</td>
+      <td class="px-4 py-3">${optIn}</td>
+      <td class="px-4 py-3 text-gray-500">${date}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Load messages table ──────────────────────────
+async function loadMessages() {
+  const res = await fetch(API + '/messages');
+  if (!res.ok) return;
+  const messages = await res.json();
+  const tbody = document.getElementById('messagesBody');
+  tbody.innerHTML = '';
+
+  if (!messages.length) {
+    document.getElementById('noMessages').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('noMessages').classList.add('hidden');
+
+  messages.forEach(m => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-gray-50';
+    const date = m.created_at ? new Date(m.created_at).toLocaleString() : '—';
+    const typeLabel = m.message_type.replace(/_/g, ' ');
+    tr.innerHTML = `
+      <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">${date}</td>
+      <td class="px-4 py-3 text-gray-600">${esc(m.to_phone)}</td>
+      <td class="px-4 py-3"><span class="badge badge-${m.message_type}">${typeLabel}</span></td>
+      <td class="px-4 py-3 text-gray-600 max-w-[300px] truncate">${esc(m.message_body)}</td>
+      <td class="px-4 py-3 text-green-600 font-medium text-xs">${m.status}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Load drafts table ────────────────────────────
+async function loadDrafts() {
+  const res = await fetch(API + '/drafts');
+  if (!res.ok) return;
+  const drafts = await res.json();
+  const tbody = document.getElementById('draftsBody');
+  tbody.innerHTML = '';
+
+  if (!drafts.length) {
+    document.getElementById('noDrafts').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('noDrafts').classList.add('hidden');
+
+  drafts.forEach(d => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-gray-50';
+    const stars = '⭐'.repeat(d.star_rating || 0);
+    tr.innerHTML = `
+      <td class="px-4 py-3 font-medium">${esc(d.reviewer_name || 'Anonymous')}</td>
+      <td class="px-4 py-3">${stars}</td>
+      <td class="px-4 py-3 text-gray-600 max-w-[200px] truncate">${esc(d.review_text || '')}</td>
+      <td class="px-4 py-3 text-gray-600 max-w-[200px] truncate">${esc(d.ai_draft_reply || '')}</td>
+      <td class="px-4 py-3"><span class="badge badge-${d.status}">${d.status.replace(/_/g, ' ')}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Toast notification ────────────────────────
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// ── Escape HTML ──────────────────────────────────
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// ── Load opted-in count ──────────────────────────
+async function loadOptedInCount() {
+  const res = await fetch(API + '/opted-in-count');
+  if (!res.ok) return;
+  const data = await res.json();
+  document.getElementById('optedInCount').textContent = data.opted_in;
+  const btn = document.getElementById('campaignSendBtn');
+  if (data.opted_in === 0) btn.disabled = true;
+  else btn.disabled = false;
+}
+
+// ── Load campaigns table ────────────────────────
+async function loadCampaigns() {
+  const res = await fetch(API + '/campaigns');
+  if (!res.ok) return;
+  const campaigns = await res.json();
+  const tbody = document.getElementById('campaignsBody');
+  tbody.innerHTML = '';
+
+  if (!campaigns.length) {
+    document.getElementById('noCampaigns').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('noCampaigns').classList.add('hidden');
+
+  campaigns.forEach(c => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-gray-50';
+    const date = c.created_at ? new Date(c.created_at).toLocaleString() : '—';
+    tr.innerHTML = `
+      <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">${date}</td>
+      <td class="px-4 py-3 text-gray-600 max-w-[300px] truncate">${esc(c.message_body)}</td>
+      <td class="px-4 py-3 text-green-600 font-medium">${c.sent_count}/${c.total_recipients}</td>
+      <td class="px-4 py-3 text-red-500">${c.failed_count || 0}</td>
+      <td class="px-4 py-3"><span class="badge badge-${c.status}">${c.status}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Campaign form ───────────────────────────────
+const campaignMsgEl = document.getElementById('campaignMsg');
+if (campaignMsgEl) {
+  campaignMsgEl.addEventListener('input', () => {
+    document.getElementById('campaignCharCount').textContent = campaignMsgEl.value.length;
+  });
+}
+
+document.getElementById('campaignForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('campaignMsg').value.trim();
+  if (!msg) { showToast('Please enter a message.', 'error'); return; }
+
+  const btn = document.getElementById('campaignSendBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+
+  try {
+    const res = await fetch(API + '/campaigns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message_body: msg }),
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      showToast(`Campaign sent! ${data.sent} delivered, ${data.failed} failed.`, 'success');
+      document.getElementById('campaignMsg').value = '';
+      document.getElementById('campaignCharCount').textContent = '0';
+      loadCampaigns();
+    } else {
+      showToast(data.detail || 'Failed to send campaign.', 'error');
+    }
+  } catch (err) {
+    showToast('Network error. Please try again.', 'error');
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Send Campaign';
+});
+
+// ── Currency symbols ─────────────────────────────
+const currencySymbols = { GBP:'£', USD:'$', EUR:'€', AUD:'A$', CAD:'C$', NZD:'NZ$', ZAR:'R' };
+function cs() { return currencySymbols[window._bizCurrency] || '£'; }
+
+// ── Line-item helpers ────────────────────────────
+function createLineItemRow(prefix) {
+  const div = document.createElement('div');
+  div.className = 'flex gap-2 items-start';
+  div.innerHTML = `
+    <input type="text" placeholder="Description" class="li-desc flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none" />
+    <input type="number" placeholder="Qty" value="1" min="0" step="any" class="li-qty w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none" />
+    <input type="number" placeholder="Price" value="0" min="0" step="0.01" class="li-price w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none" />
+    <button type="button" class="text-red-400 hover:text-red-600 text-lg px-1" onclick="this.parentElement.remove(); recalcTotals('${prefix}')">✕</button>
+  `;
+  div.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => recalcTotals(prefix)));
+  return div;
+}
+
+function addInvLineItem() { document.getElementById('invLineItems').appendChild(createLineItemRow('inv')); }
+function addQuoLineItem() { document.getElementById('quoLineItems').appendChild(createLineItemRow('quo')); }
+
+function recalcTotals(prefix) {
+  const container = document.getElementById(prefix + 'LineItems');
+  let subtotal = 0;
+  container.querySelectorAll('.flex').forEach(row => {
+    const qty = parseFloat(row.querySelector('.li-qty')?.value) || 0;
+    const price = parseFloat(row.querySelector('.li-price')?.value) || 0;
+    subtotal += qty * price;
+  });
+  const taxRate = window._bizTaxRate || 20;
+  const taxLabel = window._bizTaxLabel || 'VAT';
+  const taxAmount = subtotal * taxRate / 100;
+  document.getElementById(prefix + 'Subtotal').textContent = subtotal.toFixed(2);
+  document.getElementById(prefix + 'TaxLabel').textContent = `${taxLabel} (${taxRate}%)`;
+  document.getElementById(prefix + 'TaxAmount').textContent = taxAmount.toFixed(2);
+  document.getElementById(prefix + 'Total').textContent = (subtotal + taxAmount).toFixed(2);
+}
+
+function collectLineItems(prefix) {
+  const items = [];
+  document.getElementById(prefix + 'LineItems').querySelectorAll('.flex').forEach(row => {
+    const desc = row.querySelector('.li-desc')?.value?.trim() || '';
+    const qty = parseFloat(row.querySelector('.li-qty')?.value) || 0;
+    const price = parseFloat(row.querySelector('.li-price')?.value) || 0;
+    if (desc) items.push({ description: desc, quantity: qty, unit_price: price });
+  });
+  return items;
+}
+
+// ── Load customer dropdowns (for invoice/quote forms) ──
+async function loadCustomerDropdowns() {
+  const res = await fetch(API + '/customers');
+  if (!res.ok) return;
+  const custs = await res.json();
+  ['invCustomer', 'quoCustomer'].forEach(selId => {
+    const sel = document.getElementById(selId);
+    // Keep the first "Select customer…" option
+    while (sel.options.length > 1) sel.remove(1);
+    custs.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.name} (${c.phone_number})`;
+      sel.appendChild(opt);
+    });
+  });
+  // Build a lookup for display
+  window._custMap = {};
+  custs.forEach(c => { window._custMap[c.id] = c.name; });
+}
+
+// ── Invoices ─────────────────────────────────────
+async function loadInvoices() {
+  const res = await fetch(API + '/invoices');
+  if (!res.ok) return;
+  const invoices = await res.json();
+  const tbody = document.getElementById('invoicesBody');
+  tbody.innerHTML = '';
+
+  if (!invoices.length) { document.getElementById('noInvoices').classList.remove('hidden'); return; }
+  document.getElementById('noInvoices').classList.add('hidden');
+
+  invoices.forEach(inv => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-gray-50';
+    const due = inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '—';
+    const custName = (window._custMap && window._custMap[inv.customer_id]) || '—';
+    const pdfUrl = `${API}/invoices/${inv.id}/pdf`;
+    const hasCust = inv.customer_id && inv.customer_id !== '';
+    const isPaid = inv.status === 'paid';
+    const payMethodLabel = inv.payment_method ? _payMethodLabel(inv.payment_method) : '—';
+    const markPaidBtn = (!isPaid && inv.status !== 'cancelled')
+      ? `<button onclick="showMarkPaid('${inv.id}')" class="text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-700 font-medium px-2 py-1 rounded">✅ Paid</button>`
+      : '';
+    tr.innerHTML = `
+      <td class="px-4 py-3 font-medium">${esc(inv.invoice_number)}</td>
+      <td class="px-4 py-3 text-gray-600">${esc(custName)}</td>
+      <td class="px-4 py-3 font-medium">${cs()}${Number(inv.total||0).toFixed(2)}</td>
+      <td class="px-4 py-3"><span class="badge badge-${inv.status}">${inv.status}</span></td>
+      <td class="px-4 py-3 text-gray-500 text-xs">${payMethodLabel}</td>
+      <td class="px-4 py-3 text-gray-500">${due}</td>
+      <td class="px-4 py-3 space-x-1 whitespace-nowrap">
+        <a href="${pdfUrl}" target="_blank" class="inline-block text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-2 py-1 rounded">📄 PDF</a>
+        ${hasCust ? `<button onclick="sendInvWhatsApp('${inv.id}', this)" class="text-xs bg-green-100 hover:bg-green-200 text-green-700 font-medium px-2 py-1 rounded">💬 Send</button>` : ''}
+        ${markPaidBtn}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const items = collectLineItems('inv');
+  if (!items.length) { showToast('Add at least one line item.', 'error'); return; }
+
+  const payload = {
+    customer_id: document.getElementById('invCustomer').value || null,
+    due_date: document.getElementById('invDueDate').value || null,
+    payment_terms: document.getElementById('invTerms').value.trim() || null,
+    notes: document.getElementById('invNotes').value.trim(),
+    line_items: items,
+  };
+
+  const res = await fetch(API + '/invoices', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    showToast('Invoice created!', 'success');
+    document.getElementById('invoiceForm').reset();
+    document.getElementById('invLineItems').innerHTML = '';
+    recalcTotals('inv');
+    loadInvoices();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    showToast(data.detail || 'Failed to create invoice.', 'error');
+  }
+});
+
+// ── Quotes ───────────────────────────────────────
+async function loadQuotes() {
+  const res = await fetch(API + '/quotes');
+  if (!res.ok) return;
+  const quotes = await res.json();
+  const tbody = document.getElementById('quotesBody');
+  tbody.innerHTML = '';
+
+  if (!quotes.length) { document.getElementById('noQuotes').classList.remove('hidden'); return; }
+  document.getElementById('noQuotes').classList.add('hidden');
+
+  quotes.forEach(q => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-gray-50';
+    const valid = q.valid_until ? new Date(q.valid_until).toLocaleDateString() : '—';
+    const custName = (window._custMap && window._custMap[q.customer_id]) || '—';
+    const pdfUrl = `${API}/quotes/${q.id}/pdf`;
+    const hasCust = q.customer_id && q.customer_id !== '';
+    tr.innerHTML = `
+      <td class="px-4 py-3 font-medium">${esc(q.quote_number)}</td>
+      <td class="px-4 py-3 text-gray-600">${esc(custName)}</td>
+      <td class="px-4 py-3 font-medium">${cs()}${Number(q.total||0).toFixed(2)}</td>
+      <td class="px-4 py-3"><span class="badge badge-${q.status}">${q.status}</span></td>
+      <td class="px-4 py-3 text-gray-500">${valid}</td>
+      <td class="px-4 py-3 space-x-1 whitespace-nowrap">
+        <a href="${pdfUrl}" target="_blank" class="inline-block text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-2 py-1 rounded">📄 PDF</a>
+        ${hasCust ? `<button onclick="sendQuoWhatsApp('${q.id}', this)" class="text-xs bg-green-100 hover:bg-green-200 text-green-700 font-medium px-2 py-1 rounded">💬 Send</button>` : ''}
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('quoteForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const items = collectLineItems('quo');
+  if (!items.length) { showToast('Add at least one line item.', 'error'); return; }
+
+  const payload = {
+    customer_id: document.getElementById('quoCustomer').value || null,
+    valid_until: document.getElementById('quoValidUntil').value || null,
+    notes: document.getElementById('quoNotes').value.trim(),
+    line_items: items,
+  };
+
+  const res = await fetch(API + '/quotes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    showToast('Quote created!', 'success');
+    document.getElementById('quoteForm').reset();
+    document.getElementById('quoLineItems').innerHTML = '';
+    recalcTotals('quo');
+    loadQuotes();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    showToast(data.detail || 'Failed to create quote.', 'error');
+  }
+});
+
+// ── Send invoice/quote via WhatsApp ──────────────
+// ── Payment method helpers ───────────────────────
+const PAY_METHOD_LABELS = {
+  cash: '💷 Cash', bank_transfer: '🏦 Bank Transfer', card: '💳 Card',
+  paypal: 'PayPal', stripe: 'Stripe', other: 'Other',
+};
+function _payMethodLabel(m) { return PAY_METHOD_LABELS[m] || m; }
+
+function showMarkPaid(invoiceId) {
+  const methods = (window._bizAcceptedMethods || 'cash,bank_transfer').split(',').filter(Boolean);
+  const opts = methods.map(m => `<option value="${m}">${_payMethodLabel(m)}</option>`).join('');
+  const html = `
+    <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" id="markPaidOverlay" onclick="if(event.target===this)this.remove()">
+      <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-xs">
+        <h3 class="font-bold text-lg mb-3">Mark as Paid</h3>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+        <select id="markPaidMethod" class="w-full border border-gray-300 rounded-lg px-3 py-2 mb-4 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+          ${opts}
+        </select>
+        <div class="flex gap-2">
+          <button onclick="markInvoicePaid('${invoiceId}')" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg">Confirm</button>
+          <button onclick="document.getElementById('markPaidOverlay').remove()" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 rounded-lg">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function markInvoicePaid(invoiceId) {
+  const method = document.getElementById('markPaidMethod').value;
+  try {
+    const res = await fetch(`${API}/invoices/${invoiceId}/mark-paid`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payment_method: method }),
+    });
+    if (res.ok) {
+      showToast('Invoice marked as paid!', 'success');
+      loadInvoices();
+    } else {
+      const data = await res.json();
+      showToast(data.detail || 'Failed to mark paid.', 'error');
+    }
+  } catch { showToast('Network error.', 'error'); }
+  const overlay = document.getElementById('markPaidOverlay');
+  if (overlay) overlay.remove();
+}
+
+async function sendInvWhatsApp(id, btn) {
+  if (!confirm('Send this invoice to the customer via WhatsApp?')) return;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const res = await fetch(`${API}/invoices/${id}/send-whatsapp`, { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) { showToast('Invoice sent via WhatsApp!', 'success'); loadInvoices(); }
+    else showToast(data.detail || 'Failed to send.', 'error');
+  } catch { showToast('Network error.', 'error'); }
+  btn.disabled = false; btn.textContent = '💬 Send';
+}
+
+async function sendQuoWhatsApp(id, btn) {
+  if (!confirm('Send this quote to the customer via WhatsApp?')) return;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const res = await fetch(`${API}/quotes/${id}/send-whatsapp`, { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) { showToast('Quote sent via WhatsApp!', 'success'); loadQuotes(); }
+    else showToast(data.detail || 'Failed to send.', 'error');
+  } catch { showToast('Network error.', 'error'); }
+  btn.disabled = false; btn.textContent = '💬 Send';
+}
+
+// ── Accounts ─────────────────────────────────────
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function formatMonth(key) {
+  if (!key || key === 'unknown') return 'Unknown';
+  const [y, m] = key.split('-');
+  return `${MONTH_NAMES[parseInt(m,10)-1]} ${y}`;
+}
+
+async function loadAccounts() {
+  const res = await fetch(API + '/accounts');
+  if (!res.ok) return;
+  const data = await res.json();
+
+  // Summary cards
+  document.getElementById('acctTotalPaid').textContent = `${cs()}${data.total_paid.toFixed(2)}`;
+  document.getElementById('acctTotalOutstanding').textContent = `${cs()}${data.total_outstanding.toFixed(2)}`;
+
+  // This month's income
+  const now = new Date();
+  const thisKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const thisMonthData = data.months.find(m => m.month === thisKey);
+  document.getElementById('acctThisMonth').textContent = `${cs()}${(thisMonthData ? thisMonthData.paid : 0).toFixed(2)}`;
+
+  // Monthly breakdown
+  const mtbody = document.getElementById('acctMonthsBody');
+  mtbody.innerHTML = '';
+  if (!data.months.length) {
+    document.getElementById('noAcctMonths').classList.remove('hidden');
+  } else {
+    document.getElementById('noAcctMonths').classList.add('hidden');
+    data.months.forEach(m => {
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-gray-50';
+      tr.innerHTML = `
+        <td class="px-4 py-3 font-medium">${formatMonth(m.month)}</td>
+        <td class="px-4 py-3 text-right text-green-700 font-medium">${cs()}${m.paid.toFixed(2)}</td>
+        <td class="px-4 py-3 text-right text-yellow-600 font-medium">${cs()}${m.outstanding.toFixed(2)}</td>
+        <td class="px-4 py-3 text-right text-gray-600">${m.count}</td>
+      `;
+      mtbody.appendChild(tr);
+    });
+  }
+
+  // All invoices list
+  const itbody = document.getElementById('acctInvoicesBody');
+  itbody.innerHTML = '';
+  const invoices = data.invoices || [];
+  if (!invoices.length) {
+    document.getElementById('noAcctInvoices').classList.remove('hidden');
+  } else {
+    document.getElementById('noAcctInvoices').classList.add('hidden');
+    invoices.forEach(inv => {
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-gray-50';
+      const custName = (window._custMap && window._custMap[inv.customer_id]) || '—';
+      const isPaid = inv.status === 'paid';
+      const payLabel = inv.payment_method ? _payMethodLabel(inv.payment_method) : '—';
+      const dateStr = isPaid && inv.paid_at
+        ? new Date(inv.paid_at).toLocaleDateString()
+        : inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '—';
+      const pdfUrl = `${API}/invoices/${inv.id}/pdf`;
+      const markPaidBtn = (!isPaid && inv.status !== 'cancelled')
+        ? `<button onclick="showMarkPaidAcct('${inv.id}')" class="text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-700 font-medium px-2 py-1 rounded">✅ Paid</button>`
+        : '';
+      tr.innerHTML = `
+        <td class="px-4 py-3 font-medium">${esc(inv.invoice_number)}</td>
+        <td class="px-4 py-3 text-gray-600">${esc(custName)}</td>
+        <td class="px-4 py-3 text-right font-medium">${cs()}${Number(inv.total||0).toFixed(2)}</td>
+        <td class="px-4 py-3"><span class="badge badge-${inv.status}">${inv.status}</span></td>
+        <td class="px-4 py-3 text-gray-500 text-xs">${payLabel}</td>
+        <td class="px-4 py-3 text-gray-500 text-xs">${dateStr}</td>
+        <td class="px-4 py-3 space-x-1 whitespace-nowrap">
+          <a href="${pdfUrl}" target="_blank" class="inline-block text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-2 py-1 rounded">📄 PDF</a>
+          ${markPaidBtn}
+          <button onclick="deleteInvoiceAcct('${inv.id}')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-medium px-2 py-1 rounded">🗑 Delete</button>
+        </td>
+      `;
+      itbody.appendChild(tr);
+    });
+  }
+}
+
+function showMarkPaidAcct(invoiceId) {
+  // Reuse the same mark-paid dialog, but refresh accounts tab after
+  const methods = (window._bizAcceptedMethods || 'cash,bank_transfer').split(',').filter(Boolean);
+  const opts = methods.map(m => `<option value="${m}">${_payMethodLabel(m)}</option>`).join('');
+  const html = `
+    <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" id="markPaidOverlay" onclick="if(event.target===this)this.remove()">
+      <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-xs">
+        <h3 class="font-bold text-lg mb-3">Mark as Paid</h3>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+        <select id="markPaidMethod" class="w-full border border-gray-300 rounded-lg px-3 py-2 mb-4 bg-white focus:ring-2 focus:ring-green-500 outline-none">
+          ${opts}
+        </select>
+        <div class="flex gap-2">
+          <button onclick="markInvoicePaidAcct('${invoiceId}')" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg">Confirm</button>
+          <button onclick="document.getElementById('markPaidOverlay').remove()" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 rounded-lg">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function markInvoicePaidAcct(invoiceId) {
+  const method = document.getElementById('markPaidMethod').value;
+  try {
+    const res = await fetch(`${API}/invoices/${invoiceId}/mark-paid`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payment_method: method }),
+    });
+    if (res.ok) {
+      showToast('Invoice marked as paid!', 'success');
+      loadAccounts();
+      loadInvoices();
+    } else {
+      const data = await res.json();
+      showToast(data.detail || 'Failed to mark paid.', 'error');
+    }
+  } catch { showToast('Network error.', 'error'); }
+  const overlay = document.getElementById('markPaidOverlay');
+  if (overlay) overlay.remove();
+}
+
+async function deleteInvoiceAcct(invoiceId) {
+  if (!confirm('Delete this invoice? This cannot be undone.')) return;
+  try {
+    const res = await fetch(`${API}/invoices/${invoiceId}`, { method: 'DELETE' });
+    if (res.ok) {
+      showToast('Invoice deleted.', 'success');
+      loadAccounts();
+      loadInvoices();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.detail || 'Failed to delete invoice.', 'error');
+    }
+  } catch { showToast('Network error.', 'error'); }
+}
+
+// ── Init ─────────────────────────────────────────
+loadBusiness();
+loadStats();
+loadCustomers();
+loadMessages();
+loadDrafts();
+loadOptedInCount();
+loadCampaigns();
+loadCustomerDropdowns();
+loadInvoices();
+loadQuotes();
+loadAccounts();
+</script>
+</body>
+</html>

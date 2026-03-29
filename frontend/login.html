@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — ReviewEngine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .toast{position:fixed;top:1.5rem;right:1.5rem;left:1.5rem;z-index:9999;padding:.75rem 1.25rem;border-radius:.5rem;color:#fff;font-weight:600;font-size:.875rem;box-shadow:0 4px 12px rgba(0,0,0,.15);transform:translateY(-120%);transition:transform .3s ease;text-align:center;}
+    .toast.show{transform:translateY(0);}
+    @media(min-width:640px){.toast{left:auto;right:1.5rem;max-width:360px;transform:translateX(120%);text-align:left;}.toast.show{transform:translateX(0);}}
+    .toast-success{background:#16a34a;}
+    .toast-error{background:#dc2626;}
+    .otp-input { letter-spacing: 0.75em; font-size: 1.5rem; text-align: center; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
+
+  <div id="toastContainer"></div>
+
+  <!-- Header -->
+  <header class="bg-green-700 text-white">
+    <div class="max-w-lg mx-auto px-4 py-4 flex items-center justify-between">
+      <h1 class="text-xl font-bold">ReviewEngine</h1>
+      <span class="text-green-200 text-sm">Tradesperson Login</span>
+    </div>
+  </header>
+
+  <!-- Login Card -->
+  <main class="flex-1 flex items-center justify-center px-4 py-12">
+    <div class="w-full max-w-sm">
+
+      <!-- Step 1: Phone Number -->
+      <div id="step1" class="bg-white rounded-xl shadow-lg p-6 sm:p-8">
+        <div class="text-center mb-6">
+          <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
+            <svg class="w-8 h-8 text-green-600" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a8 8 0 01-4.28-1.232l-.308-.182-2.87.852.852-2.87-.183-.308A8 8 0 1112 20z"/></svg>
+          </div>
+          <h2 class="text-xl font-bold text-gray-900">Login with WhatsApp</h2>
+          <p class="text-sm text-gray-500 mt-2">Enter your registered phone number and we'll send you a login code via WhatsApp.</p>
+        </div>
+
+        <form id="phoneForm">
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+            <div class="flex gap-2">
+              <select id="countryCode" class="border border-gray-300 rounded-lg px-3 py-2.5 bg-white focus:ring-2 focus:ring-green-500 outline-none text-sm w-24">
+                <option value="+44" selected>🇬🇧 +44</option>
+                <option value="+1">🇺🇸 +1</option>
+                <option value="+353">🇮🇪 +353</option>
+                <option value="+61">🇦🇺 +61</option>
+                <option value="+64">🇳🇿 +64</option>
+                <option value="+27">🇿🇦 +27</option>
+                <option value="+49">🇩🇪 +49</option>
+                <option value="+33">🇫🇷 +33</option>
+              </select>
+              <input id="phoneInput" type="tel" placeholder="7911 123456" required
+                class="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-green-500 outline-none text-sm" />
+            </div>
+            <p class="text-xs text-gray-400 mt-1">We'll send a 6-digit code to this WhatsApp number</p>
+          </div>
+
+          <button type="submit" id="sendCodeBtn"
+            class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed">
+            Send Login Code
+          </button>
+        </form>
+
+        <p class="text-xs text-gray-400 text-center mt-4">
+          Don't have an account? Message us on WhatsApp to get started.
+        </p>
+      </div>
+
+      <!-- Step 2: Enter Code -->
+      <div id="step2" class="bg-white rounded-xl shadow-lg p-6 sm:p-8 hidden">
+        <div class="text-center mb-6">
+          <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
+            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          </div>
+          <h2 class="text-xl font-bold text-gray-900">Enter Your Code</h2>
+          <p class="text-sm text-gray-500 mt-2">We've sent a 6-digit code to your WhatsApp. Check your messages.</p>
+          <p class="text-sm text-green-600 font-medium mt-1" id="sentToDisplay"></p>
+        </div>
+
+        <form id="codeForm">
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Verification Code</label>
+            <input id="codeInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" required autocomplete="one-time-code"
+              class="otp-input w-full border border-gray-300 rounded-lg px-3 py-3 focus:ring-2 focus:ring-green-500 outline-none" />
+          </div>
+
+          <button type="submit" id="verifyBtn"
+            class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed">
+            Verify &amp; Login
+          </button>
+        </form>
+
+        <div class="flex items-center justify-between mt-4">
+          <button onclick="goBack()" class="text-sm text-gray-500 hover:text-gray-700">
+            &larr; Change number
+          </button>
+          <button onclick="resendCode()" id="resendBtn" class="text-sm text-green-600 hover:text-green-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+            Resend code
+          </button>
+        </div>
+
+        <p class="text-xs text-gray-400 text-center mt-3">Code expires in 5 minutes</p>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="bg-gray-900 text-gray-400 text-sm text-center py-6">
+    <p>&copy; 2026 ReviewEngine. All rights reserved.</p>
+  </footer>
+
+<script>
+  // If already logged in, redirect to portal
+  const existingToken = localStorage.getItem('re_token');
+  const existingBizId = localStorage.getItem('re_business_id');
+  if (existingToken && existingBizId) {
+    // Verify the token is still valid
+    fetch('/auth/me', { headers: { 'Authorization': 'Bearer ' + existingToken } })
+      .then(r => { if (r.ok) window.location.href = '/portal.html?business_id=' + existingBizId; })
+      .catch(() => {});
+  }
+
+  let currentPhone = '';
+
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3000);
+  }
+
+  // Step 1: Send code
+  document.getElementById('phoneForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const countryCode = document.getElementById('countryCode').value;
+    const rawPhone = document.getElementById('phoneInput').value.trim();
+    if (!rawPhone) { showToast('Please enter your phone number.', 'error'); return; }
+
+    // Build full number: strip leading 0 if present, prepend country code
+    let phone = rawPhone.replace(/[\s\-\(\)]/g, '');
+    if (phone.startsWith('0')) phone = phone.substring(1);
+    phone = countryCode + phone;
+    currentPhone = phone;
+
+    const btn = document.getElementById('sendCodeBtn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    try {
+      const res = await fetch('/auth/request-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phone }),
+      });
+      const data = await res.json();
+
+      if (res.status === 429) {
+        showToast(data.detail || 'Too many attempts. Please wait.', 'error');
+      } else {
+        // Always show step 2 (don't reveal if account exists)
+        document.getElementById('step1').classList.add('hidden');
+        document.getElementById('step2').classList.remove('hidden');
+        document.getElementById('sentToDisplay').textContent = phone;
+        document.getElementById('codeInput').focus();
+        showToast('Check your WhatsApp for the login code!', 'success');
+      }
+    } catch {
+      showToast('Network error. Please try again.', 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Send Login Code';
+  });
+
+  // Step 2: Verify code
+  document.getElementById('codeForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = document.getElementById('codeInput').value.trim();
+    if (!code || code.length !== 6) { showToast('Please enter the 6-digit code.', 'error'); return; }
+
+    const btn = document.getElementById('verifyBtn');
+    btn.disabled = true;
+    btn.textContent = 'Verifying…';
+
+    try {
+      const res = await fetch('/auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: currentPhone, code: code }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        // Store session
+        localStorage.setItem('re_token', data.token);
+        localStorage.setItem('re_business_id', data.business_id);
+        localStorage.setItem('re_business_name', data.business_name);
+
+        showToast(`Welcome back, ${data.business_name}!`, 'success');
+
+        // Redirect to portal
+        setTimeout(() => {
+          window.location.href = '/portal.html?business_id=' + data.business_id;
+        }, 500);
+      } else {
+        showToast(data.detail || 'Invalid code. Please try again.', 'error');
+      }
+    } catch {
+      showToast('Network error. Please try again.', 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Verify & Login';
+  });
+
+  function goBack() {
+    document.getElementById('step2').classList.add('hidden');
+    document.getElementById('step1').classList.remove('hidden');
+    document.getElementById('codeInput').value = '';
+  }
+
+  async function resendCode() {
+    const btn = document.getElementById('resendBtn');
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/auth/request-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: currentPhone }),
+      });
+      const data = await res.json();
+
+      if (res.status === 429) {
+        showToast(data.detail, 'error');
+      } else {
+        showToast('New code sent! Check your WhatsApp.', 'success');
+      }
+    } catch {
+      showToast('Failed to resend code.', 'error');
+    }
+
+    setTimeout(() => { btn.disabled = false; }, 10000);
+  }
+</script>
+</body>
+</html>

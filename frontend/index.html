@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ReviewEngine — Get More 5-Star Reviews on Autopilot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+
+  <!-- ───── Hero ───── -->
+  <section class="bg-gradient-to-br from-green-600 to-green-800 text-white">
+    <div class="max-w-4xl mx-auto px-6 py-20 text-center">
+      <h1 class="text-4xl sm:text-5xl font-extrabold leading-tight">
+        Get More 5-Star Reviews<br class="hidden sm:block" /> on Autopilot
+      </h1>
+      <p class="mt-6 text-lg sm:text-xl text-green-100 max-w-2xl mx-auto">
+        The review tool built for tradespeople. Text us your customer's number,
+        and we'll ask them for a Google review on your behalf — automatically.
+      </p>
+      <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="#signup"
+           class="px-8 py-3 bg-white text-green-700 font-semibold rounded-lg shadow hover:bg-green-50 transition">
+          Start Getting Reviews &darr;
+        </a>
+        <a id="demoBtn"
+           href="https://wa.me/YOURBOTNUMBER?text=Hi%2C%20show%20me%20how%20this%20works!"
+           target="_blank" rel="noopener"
+           class="px-8 py-3 bg-green-500 text-white font-semibold rounded-lg shadow hover:bg-green-400 transition flex items-center gap-2 border-2 border-white/30">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347zm-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884zm8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Try a Live Demo
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── Demo Banner ───── -->
+  <section class="bg-green-50 border-b border-green-200">
+    <div class="max-w-4xl mx-auto px-6 py-10 text-center">
+      <h2 class="text-xl font-bold text-green-800 mb-3">🎯 See It In Action — 60 Seconds, No Sign Up</h2>
+      <p class="text-gray-600 max-w-xl mx-auto mb-5">
+        Tap the demo button above and the bot will walk you through the entire
+        review flow. You'll experience it as <strong>both</strong> the business owner
+        <em>and</em> the customer — in under a minute.
+      </p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3 text-sm text-gray-500">
+        <span class="bg-white border border-gray-200 rounded-full px-4 py-1.5">You type /REVIEW John</span>
+        <span class="hidden sm:inline">→</span>
+        <span class="bg-white border border-gray-200 rounded-full px-4 py-1.5">You see what John sees</span>
+        <span class="hidden sm:inline">→</span>
+        <span class="bg-white border border-gray-200 rounded-full px-4 py-1.5">You tap "Great!" ⭐</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── How It Works ───── -->
+  <section class="max-w-4xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-bold text-center mb-10">How It Works</h2>
+    <div class="grid sm:grid-cols-3 gap-8 text-center">
+      <div>
+        <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-2xl font-bold">1</div>
+        <h3 class="font-semibold mb-2">Text the Bot</h3>
+        <p class="text-gray-600 text-sm">Send a WhatsApp message with your customer's phone number and first name.</p>
+      </div>
+      <div>
+        <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-2xl font-bold">2</div>
+        <h3 class="font-semibold mb-2">We Ask for a Review</h3>
+        <p class="text-gray-600 text-sm">Your customer gets a friendly WhatsApp message asking how the job went.</p>
+      </div>
+      <div>
+        <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-2xl font-bold">3</div>
+        <h3 class="font-semibold mb-2">Reviews Roll In</h3>
+        <p class="text-gray-600 text-sm">Happy customers are sent straight to your Google page. We even draft AI replies.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── Signup Form ───── -->
+  <section id="signup" class="bg-white border-t border-gray-200">
+    <div class="max-w-lg mx-auto px-6 py-16">
+      <h2 class="text-2xl font-bold text-center mb-2">Sign Up</h2>
+      <p class="text-gray-500 text-center mb-8">No contracts. Cancel anytime.</p>
+
+      <form id="signupForm" class="space-y-5">
+        <!-- Business Name -->
+        <div>
+          <label for="businessName" class="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
+          <input id="businessName" name="business_name" type="text" required
+                 placeholder="e.g. Smith's Plumbing"
+                 class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" />
+        </div>
+
+        <!-- Trade Type -->
+        <div>
+          <label for="tradeType" class="block text-sm font-medium text-gray-700 mb-1">Trade Type</label>
+          <select id="tradeType" name="trade_type" required
+                  class="w-full border border-gray-300 rounded-lg px-4 py-2.5 bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none">
+            <option value="" disabled selected>Select your trade</option>
+            <option value="electrician">Electrician</option>
+            <option value="plumber">Plumber</option>
+            <option value="builder">Builder</option>
+            <option value="roofer">Roofer</option>
+            <option value="landscaper">Landscaper</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <!-- Phone -->
+        <div>
+          <label for="phone" class="block text-sm font-medium text-gray-700 mb-1">Your WhatsApp Phone Number</label>
+          <input id="phone" name="phone" type="tel" required
+                 placeholder="+44 7804 563 456"
+                 class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" />
+        </div>
+
+        <!-- Email -->
+        <div>
+          <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input id="email" name="email" type="email" required
+                 placeholder="you@example.com"
+                 class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" />
+        </div>
+
+        <!-- Submit -->
+        <button type="submit" id="submitBtn"
+                class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed">
+          Sign Up — Free
+        </button>
+        <p class="text-xs text-gray-400 text-center mt-2">No payment required. Get started instantly.</p>
+      </form>
+
+      <p id="formError" class="hidden mt-4 text-sm text-red-600 text-center"></p>
+    </div>
+  </section>
+
+  <!-- ───── Footer ───── -->
+  <footer class="bg-gray-900 text-gray-400 text-sm text-center py-8">
+    <p>&copy; 2026 ReviewEngine. All rights reserved.</p>
+  </footer>
+
+  <script>
+    const form = document.getElementById('signupForm');
+    const btn = document.getElementById('submitBtn');
+    const errorEl = document.getElementById('formError');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      btn.disabled = true;
+      btn.textContent = 'Creating account…';
+      errorEl.classList.add('hidden');
+
+      const payload = {
+        business_name: form.business_name.value.trim(),
+        trade_type: form.trade_type.value,
+        phone: form.phone.value.trim(),
+        email: form.email.value.trim(),
+      };
+
+      try {
+        const res = await fetch('/api/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || 'Something went wrong. Please try again.');
+        }
+
+        const { checkout_url } = await res.json();
+        window.location.href = checkout_url;
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Sign Up — Free';
+      }
+    });
+  </script>
+</body>
+</html>
