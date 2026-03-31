@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS businesses (
     google_refresh_token TEXT,
     google_account_id    TEXT,
     google_location_id   TEXT,
+    stripe_customer_id   TEXT,
+    stripe_subscription_id TEXT,
     subscription_status  TEXT NOT NULL DEFAULT 'active',
     auto_reply_enabled   INTEGER NOT NULL DEFAULT 1,
     auto_reply_threshold INTEGER NOT NULL DEFAULT 4,

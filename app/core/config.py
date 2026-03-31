@@ -35,9 +35,10 @@ class Settings(BaseSettings):
     # WhatsApp App Secret (for webhook signature verification)
     whatsapp_app_secret: str = ""
 
-    # Stripe (unused — removed for local testing)
+    # Stripe
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_price_id: str = ""          # Stripe Price ID for the subscription plan
 
     # SendGrid (email)
     sendgrid_api_key: str = ""

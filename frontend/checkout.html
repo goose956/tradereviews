@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Subscribe — ReviewEngine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col">
+
+  <!-- ───── Header ───── -->
+  <header class="bg-white border-b border-gray-200">
+    <div class="max-w-3xl mx-auto px-6 py-4 flex items-center gap-3">
+      <span class="text-2xl">⭐</span>
+      <span class="font-bold text-lg text-green-700">ReviewEngine</span>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-3xl mx-auto px-6 py-10 w-full">
+
+    <!-- Personalised greeting -->
+    <div class="text-center mb-8">
+      <h1 class="text-3xl sm:text-4xl font-extrabold mb-2">You're almost in, <span id="bizName" class="text-green-600">...</span>!</h1>
+      <p class="text-gray-500 text-lg">One step left — pick your plan and you're live in 60 seconds.</p>
+    </div>
+
+    <!-- ── Plan Card ── -->
+    <div class="bg-white rounded-2xl border-2 border-green-500 shadow-lg p-6 sm:p-8 mb-8 relative overflow-hidden">
+      <div class="absolute top-0 right-0 bg-green-600 text-white text-xs font-bold px-4 py-1 rounded-bl-lg">MOST POPULAR</div>
+
+      <div class="flex items-end gap-2 mb-4">
+        <span class="text-4xl font-extrabold text-gray-900">£49</span>
+        <span class="text-gray-500 text-lg mb-1">/month</span>
+      </div>
+
+      <p class="text-gray-600 mb-6">Everything you need to grow your reputation and run your business from WhatsApp.</p>
+
+      <div class="grid sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+        <div class="flex items-start gap-2">
+          <span class="text-green-500 mt-0.5">✓</span>
+          <span><strong>Unlimited review requests</strong> — WhatsApp, SMS &amp; email</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-green-500 mt-0.5">✓</span>
+          <span><strong>Automatic follow-ups</strong> — chase the ones who forget</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-green-500 mt-0.5">✓</span>
+          <span><strong>Bad review protection</strong> — unhappy ones come to you first</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-green-500 mt-0.5">✓</span>
+          <span><strong>AI review replies</strong> — drafted &amp; waiting for your approval</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-green-500 mt-0.5">✓</span>
+          <span><strong>Invoices &amp; quotes</strong> — create, send &amp; track PDFs</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-green-500 mt-0.5">✓</span>
+          <span><strong>Expense tracking</strong> — snap receipts, AI logs them</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-green-500 mt-0.5">✓</span>
+          <span><strong>Booking calendar</strong> — manage your schedule</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-green-500 mt-0.5">✓</span>
+          <span><strong>Web dashboard</strong> — full portal for your business</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Trust Signals ── -->
+    <div class="grid sm:grid-cols-3 gap-4 mb-8">
+      <div class="bg-white rounded-xl border border-gray-200 p-5 text-center">
+        <div class="text-2xl mb-2">🔒</div>
+        <h3 class="font-bold text-sm mb-1">Cancel Anytime</h3>
+        <p class="text-gray-500 text-xs">No contracts, no lock-in. Cancel with one click from your dashboard — takes 10 seconds.</p>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-5 text-center">
+        <div class="text-2xl mb-2">💰</div>
+        <h3 class="font-bold text-sm mb-1">14-Day Money Back</h3>
+        <p class="text-gray-500 text-xs">Not happy? We'll refund every penny, no questions asked. Zero risk.</p>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-5 text-center">
+        <div class="text-2xl mb-2">⚡</div>
+        <h3 class="font-bold text-sm mb-1">Live in 60 Seconds</h3>
+        <p class="text-gray-500 text-xs">After payment, message the bot on WhatsApp and start sending review requests immediately.</p>
+      </div>
+    </div>
+
+    <!-- ── Subscribe Button ── -->
+    <div class="text-center">
+      <button id="subscribeBtn"
+        class="w-full sm:w-auto px-12 py-4 bg-green-600 hover:bg-green-700 text-white font-bold text-lg rounded-xl shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+        Subscribe — £49/month
+      </button>
+      <p class="text-gray-400 text-xs mt-3">Secure payment via Stripe. You won't be charged until checkout completes.</p>
+    </div>
+
+    <!-- ── Error display ── -->
+    <div id="errorMsg" class="hidden mt-6 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700 text-center"></div>
+
+  </main>
+
+  <!-- ───── Footer ───── -->
+  <footer class="bg-gray-900 text-gray-400 text-sm text-center py-6">
+    <p>&copy; 2026 ReviewEngine. All rights reserved.</p>
+  </footer>
+
+<script>
+// Read business_id from URL
+const params = new URLSearchParams(window.location.search);
+const businessId = params.get('business_id');
+
+if (!businessId) {
+  document.getElementById('errorMsg').textContent = 'Invalid link — no business ID found. Please go back to WhatsApp and try again.';
+  document.getElementById('errorMsg').classList.remove('hidden');
+  document.getElementById('subscribeBtn').disabled = true;
+}
+
+// Fetch business name to personalise the page
+async function loadBizName() {
+  if (!businessId) return;
+  try {
+    const res = await fetch(`/api/checkout-info?business_id=${encodeURIComponent(businessId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('bizName').textContent = data.business_name || 'there';
+    }
+  } catch { /* fallback text is fine */ }
+}
+loadBizName();
+
+// Subscribe button → create Stripe Checkout session
+document.getElementById('subscribeBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('subscribeBtn');
+  const errEl = document.getElementById('errorMsg');
+  errEl.classList.add('hidden');
+  btn.disabled = true;
+  btn.textContent = 'Redirecting to checkout…';
+
+  try {
+    const res = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ business_id: businessId }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Something went wrong. Please try again.');
+    }
+
+    const data = await res.json();
+    if (data.checkout_url) {
+      window.location.href = data.checkout_url;
+    } else {
+      throw new Error('No checkout URL returned.');
+    }
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Subscribe — £49/month';
+  }
+});
+</script>
+</body>
+</html>

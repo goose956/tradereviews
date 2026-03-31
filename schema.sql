@@ -19,6 +19,8 @@ CREATE TABLE businesses (
     google_refresh_token  TEXT,                          -- Fernet-encrypted OAuth refresh token
     google_account_id     TEXT,                          -- GBP account ID
     google_location_id    TEXT,                          -- GBP location ID
+    stripe_customer_id    TEXT,                          -- Stripe Customer ID
+    stripe_subscription_id TEXT,                         -- Stripe Subscription ID
     subscription_status   TEXT        NOT NULL DEFAULT 'active'
                               CHECK (subscription_status IN ('active', 'past_due', 'inactive', 'trial')),
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),

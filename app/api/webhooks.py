@@ -104,7 +104,7 @@ def _wizard_end_session(sender: str) -> None:
 # ──────────────────────────────────────────────
 # Interactive Demo — "The Flip" state machine
 # ──────────────────────────────────────────────
-_demo_sessions: dict[str, str] = {}  # sender raw phone → state
+_demo_sessions: dict[str, dict] = {}  # sender raw phone → session dict
 
 _DEMO_TRIGGERS = {
     "hi, show me how this works!",
@@ -112,6 +112,7 @@ _DEMO_TRIGGERS = {
     "hi show me how this works",
     "show me how this works",
     "demo",
+    "/demo",
 }
 
 
@@ -119,158 +120,258 @@ async def _maybe_handle_demo(
     sender: str, text: str, client: httpx.AsyncClient
 ) -> bool:
     """Route demo flow messages.  Returns True if handled."""
-    state = _demo_sessions.get(sender)
+    session = _demo_sessions.get(sender)
     trimmed = text.strip()
     lower = trimmed.lower().rstrip("!.")
 
     # ── New demo session trigger ──
-    if state is None:
+    if session is None:
         if lower not in _DEMO_TRIGGERS:
             return False
-        # Don't hijack registered businesses
-        sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
-        supabase = get_supabase()
-        biz = supabase.table("businesses").select("id").eq("phone_number", sender_e164).execute()
-        if biz.data:
-            return False
+        # /demo always works; casual greetings skip registered businesses
+        force = lower in ("/demo", "demo")
+        if not force:
+            sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
+            supabase = get_supabase()
+            biz = supabase.table("businesses").select("id").eq("phone_number", sender_e164).execute()
+            if biz.data:
+                return False
 
-        _demo_sessions[sender] = "awaiting_review"
+        _demo_sessions[sender] = {"state": "welcome"}
         await send_text_message(
             client, sender,
-            "Hey! \U0001f44b Welcome to JobPing.\n\n"
-            "I'm your new AI admin assistant. Let's pretend you just "
-            "finished a job for a customer named John, and you want "
-            "a 5-star review.\n\n"
-            "To ask John for a review, just reply with:\n"
-            "/REVIEW John",
+            "Hey! \U0001f44b Welcome to ReviewEngine.\n\n"
+            "I help tradespeople get more 5-star Google reviews "
+            "\u2014 plus handle invoices, quotes, expenses and bookings. "
+            "All from WhatsApp.\n\n"
+            "Let me show you how it works in 60 seconds.",
+        )
+        await send_interactive_buttons(
+            client, sender,
+            "What would you like to see first?",
+            [
+                {"id": "demo_review_flow", "title": "\u2b50 Review Request"},
+                {"id": "demo_all_features", "title": "\U0001f4cb All Features"},
+            ],
         )
         return True
 
-    # ── Awaiting /REVIEW John ──
-    if state == "awaiting_review":
-        if trimmed.upper().startswith("/REVIEW"):
-            _demo_sessions[sender] = "awaiting_button"
+    state = session.get("state", "")
 
-            await send_text_message(
-                client, sender,
-                "\u2705 Boom. Review request sent to John. "
-                "It's that easy.\n\n"
-                "Your customer gets a friendly WhatsApp message like "
-                "the one below \u2014 with buttons they can tap.",
-            )
-
-            await send_text_message(
-                client, sender,
-                "Now, let's switch roles. \U0001f504\n\n"
-                "Imagine *you* are John. Your phone just buzzed. "
-                "Here is exactly what John sees:",
-            )
-
-            await send_interactive_buttons(
-                client, sender,
-                "Hi John, thanks for choosing us today! "
-                "How was your experience?",
-                [
-                    {"id": "demo_great", "title": "Great! \u2b50"},
-                    {"id": "demo_bad", "title": "Could be better"},
-                ],
-            )
+    # ── awaiting_business_name — free text for trial signup ──
+    if state == "awaiting_business_name":
+        biz_name = trimmed
+        if len(biz_name) < 2:
+            await send_text_message(client, sender, "Just type your business name \u2014 e.g. \"Smith's Plumbing\"")
             return True
-
-        await send_text_message(
+        session["business_name"] = biz_name
+        session["state"] = "awaiting_trade"
+        await send_interactive_list(
             client, sender,
-            "Just type /REVIEW John to see the magic! \U0001f446",
+            f"Great \u2014 {biz_name}! What trade are you in?",
+            "Pick your trade",
+            [{"title": "Trade", "rows": [
+                {"id": "demo_trade_plumber", "title": "Plumber"},
+                {"id": "demo_trade_electrician", "title": "Electrician"},
+                {"id": "demo_trade_builder", "title": "Builder"},
+                {"id": "demo_trade_roofer", "title": "Roofer"},
+                {"id": "demo_trade_landscaper", "title": "Landscaper"},
+                {"id": "demo_trade_painter", "title": "Painter & Decorator"},
+                {"id": "demo_trade_other", "title": "Other"},
+            ]}],
         )
         return True
 
-    # ── Sent buttons, waiting for tap ──
-    if state == "awaiting_button":
+    # ── Any other text while in demo ──
+    if state in ("welcome", "review_sent", "features_shown"):
         await send_text_message(
             client, sender,
-            "Tap one of the buttons above to see what happens! \u261d\ufe0f",
+            "Tap one of the buttons above to continue! \u261d\ufe0f",
         )
         return True
 
-    # ── Demo finished — clear and let normal routing take over ──
     if state == "completed":
         del _demo_sessions[sender]
         return False
 
-    return False
+    return True
 
 
 async def _handle_demo_button(
     sender: str, payload: str, client: httpx.AsyncClient
 ) -> bool:
     """Handle button taps during the demo.  Returns True if handled."""
-    state = _demo_sessions.get(sender)
-    if state != "awaiting_button" and payload != "demo_start_trial":
+    session = _demo_sessions.get(sender)
+    if not session and payload != "demo_start_trial":
+        return False
+    if not payload.startswith("demo_"):
         return False
 
+    state = session.get("state", "") if session else ""
+
+    # ── Welcome → Review Flow ──
+    if payload == "demo_review_flow":
+        session["state"] = "review_sent"
+
+        await send_text_message(
+            client, sender,
+            "\u2705 *Review request sent to John!*\n\n"
+            "Here's what just happened:\n"
+            "1\ufe0f\u20e3 You tapped \u2018Review Request\u2019\n"
+            "2\ufe0f\u20e3 We sent John a personalised message mentioning "
+            "the job you did for him\n"
+            "3\ufe0f\u20e3 If he doesn't reply, we follow up automatically\n\n"
+            "Now let's switch roles. \U0001f504 Imagine *you* are John. "
+            "Your phone just buzzed. Here's what he sees:",
+        )
+
+        await send_interactive_buttons(
+            client, sender,
+            "Hi John, thanks for choosing Smith's Plumbing for the "
+            "boiler installation! How was your experience?",
+            [
+                {"id": "demo_great", "title": "Great! \u2b50"},
+                {"id": "demo_bad", "title": "Could be better"},
+            ],
+        )
+        return True
+
+    # ── Welcome → All Features ──
+    if payload == "demo_all_features":
+        session["state"] = "features_shown"
+
+        await send_text_message(
+            client, sender,
+            "\U0001f4ac *Everything you can do from WhatsApp:*\n\n"
+            "\u2b50 *Review Requests* \u2014 Send via WhatsApp, text or email. "
+            "Auto follow-ups if they forget. Bad reviews come to you first.\n\n"
+            "\U0001f4b7 *Invoices & Quotes* \u2014 Create and send professional "
+            "PDFs in 30 seconds. Track what\u2019s paid and what\u2019s outstanding.\n\n"
+            "\U0001f9fe *Expense Tracking* \u2014 Snap a photo of a receipt. "
+            "AI reads it and logs the expense automatically.\n\n"
+            "\U0001f4c5 *Bookings & Calendar* \u2014 Manage your schedule, "
+            "check availability, book jobs.\n\n"
+            "\U0001f4ca *Dashboard* \u2014 See revenue, outstanding invoices, "
+            "review stats and upcoming bookings at a glance.\n\n"
+            "\U0001f916 *AI Review Replies* \u2014 Every Google review gets an "
+            "AI-drafted reply waiting for your approval.",
+        )
+
+        await send_interactive_buttons(
+            client, sender,
+            "Want to see the review flow in action, or ready to get started?",
+            [
+                {"id": "demo_review_flow", "title": "\u2b50 See Review Demo"},
+                {"id": "demo_start_trial", "title": "\U0001f680 Get Started"},
+            ],
+        )
+        return True
+
+    # ── Customer taps "Great!" ──
     if payload == "demo_great":
-        _demo_sessions[sender] = "completed"
+        session["state"] = "review_result"
 
         await send_text_message(
             client, sender,
-            "\U0001f389 Awesome! Because John tapped \u2018Great\u2019, "
-            "we instantly send him the link to your Google Business page "
-            "to leave a 5-star review.\n\n"
-            "If he'd tapped 'Could be better', we'd alert you privately "
-            "so you can fix it \u2014 before he leaves a bad review online.",
-        )
-
-        await send_text_message(
-            client, sender,
-            "That's the whole system. No apps, no dashboards. "
-            "Just WhatsApp me your customer's name and number, "
-            "and I handle the rest.\n\n"
-            "Ready to start getting real reviews?",
+            "\U0001f389 *John tapped \u2018Great\u2019!*\n\n"
+            "We instantly send him the link to your Google page. "
+            "He taps it, leaves a 5-star review, done.\n\n"
+            "Meanwhile, you get a WhatsApp notification:\n"
+            "\u2705 \"John left a 5-star review! AI reply drafted \u2014 "
+            "tap to approve.\"\n\n"
+            "The whole thing took 30 seconds of your time.",
         )
 
         await send_interactive_buttons(
             client, sender,
-            "Start your 14-day free trial \u2014 no card required.",
-            [{"id": "demo_start_trial", "title": "Start Free Trial"}],
+            "That's the review flow! Want to see what else ReviewEngine can do?",
+            [
+                {"id": "demo_all_features", "title": "\U0001f4cb See Features"},
+                {"id": "demo_start_trial", "title": "\U0001f680 Get Started"},
+            ],
         )
         return True
 
+    # ── Customer taps "Could be better" ──
     if payload == "demo_bad":
-        _demo_sessions[sender] = "completed"
+        session["state"] = "review_result"
 
         await send_text_message(
             client, sender,
-            "\u26a0\ufe0f John said 'Could be better'. In a real scenario, "
-            "we'd alert you privately with their name and number so you "
-            "can call them and fix it \u2014 before they leave a bad review "
-            "online.\n\n"
-            "This 'review gating' protects your Google rating.",
-        )
-
-        await send_text_message(
-            client, sender,
-            "That's the whole system. No apps, no dashboards. "
-            "Just WhatsApp me your customer's name and number, "
-            "and I handle the rest.\n\n"
-            "Ready to start getting real reviews?",
+            "\u26a0\ufe0f *John said \u2018Could be better\u2019*\n\n"
+            "Instead of going to Google, John\u2019s feedback comes "
+            "straight to you privately. You get:\n\n"
+            "\u26a0\ufe0f \"John wasn\u2019t happy. Call him on 07700 900123 "
+            "to sort it out before he leaves a bad review.\"\n\n"
+            "This \u2018review gating\u2019 protects your Google rating. "
+            "You fix the problem, keep the customer, save your reputation.",
         )
 
         await send_interactive_buttons(
             client, sender,
-            "Start your 14-day free trial \u2014 no card required.",
-            [{"id": "demo_start_trial", "title": "Start Free Trial"}],
+            "That's the bad review protection. Want to see more features?",
+            [
+                {"id": "demo_all_features", "title": "\U0001f4cb See Features"},
+                {"id": "demo_start_trial", "title": "\U0001f680 Get Started"},
+            ],
         )
         return True
 
+    # ── Start Trial — ask for business name ──
     if payload == "demo_start_trial":
+        if not session:
+            _demo_sessions[sender] = {"state": "awaiting_business_name"}
+        else:
+            session["state"] = "awaiting_business_name"
+
+        await send_text_message(
+            client, sender,
+            "\U0001f680 Let's get you set up! It takes 30 seconds.\n\n"
+            "What's your business name?",
+        )
+        return True
+
+    # ── Trade selection ──
+    if payload.startswith("demo_trade_"):
+        trade = payload.replace("demo_trade_", "")
+        biz_name = session.get("business_name", "Your Business")
+        sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
+        settings = get_settings()
+
+        # Create or update the business record (inactive until payment)
+        supabase = get_supabase()
+        existing = supabase.table("businesses").select("id").eq(
+            "phone_number", sender_e164
+        ).execute()
+        if existing.data:
+            biz_id = existing.data[0]["id"]
+            supabase.table("businesses").update({
+                "business_name": biz_name,
+                "trade_type": trade,
+                "subscription_status": "inactive",
+            }).eq("phone_number", sender_e164).execute()
+        else:
+            import uuid
+            biz_id = str(uuid.uuid4())
+            supabase.table("businesses").insert({
+                "id": biz_id,
+                "owner_name": biz_name,
+                "business_name": biz_name,
+                "phone_number": sender_e164,
+                "trade_type": trade,
+                "subscription_status": "inactive",
+            }).execute()
+
         _demo_sessions.pop(sender, None)
 
+        checkout_url = f"{settings.base_url}/checkout.html?business_id={biz_id}"
         await send_text_message(
             client, sender,
-            "\U0001f680 Let's get you set up!\n\n"
-            "Tap the link below to create your account and "
-            "connect your Google Business Profile:\n\n"
-            "\U0001f449 https://yourdomain.com\n\n"
-            "Your 14-day free trial starts the moment you sign up.",
+            f"🎉 *Almost there, {biz_name}!*\n\n"
+            f"Here's your personalised setup page — see exactly what's "
+            f"included, our money-back guarantee, and get started:\n\n"
+            f"👉 {checkout_url}\n\n"
+            f"🔒 Cancel anytime · 💰 14-day money-back guarantee",
         )
         return True
 
@@ -393,7 +494,21 @@ async def _handle_text(
     )
 
     if biz_result.data:
-        await _handle_tradesperson_text(sender, text, biz_result.data[0], client)
+        biz = biz_result.data[0]
+        # Nudge inactive (unpaid) users
+        if biz.get("subscription_status") == "inactive":
+            settings = get_settings()
+            checkout_url = f"{settings.base_url}/checkout.html?business_id={biz['id']}"
+            await send_text_message(
+                client, sender,
+                f"👋 Hey {biz.get('business_name', 'there')}! "
+                f"Your account isn't active yet.\n\n"
+                f"Complete your setup here to get started:\n"
+                f"👉 {checkout_url}\n\n"
+                f"🔒 Cancel anytime · 💰 14-day money-back guarantee",
+            )
+            return
+        await _handle_tradesperson_text(sender, text, biz, client)
     else:
         await _handle_customer_text(sender, sender_e164, text, client)
 

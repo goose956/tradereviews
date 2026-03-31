@@ -98,6 +98,7 @@
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="bookings">Bookings</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="accounts">Accounts</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="drafts">Drafts</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="subscription">Subscription</button>
     </div>
   </section>
 
@@ -714,6 +715,69 @@
         <tbody id="acctInvoicesBody" class="divide-y divide-gray-100"></tbody>
       </table>
       <p id="noAcctInvoices" class="hidden text-center text-gray-400 py-8">No invoices yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Subscription ───── -->
+  <section id="panel-subscription" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+    <div class="bg-white rounded-lg shadow p-6 sm:p-8">
+      <h2 class="text-xl font-bold mb-6">Your Subscription</h2>
+
+      <div id="subLoading" class="text-gray-400 text-sm">Loading subscription details…</div>
+
+      <div id="subDetails" class="hidden space-y-4">
+        <!-- Status badge -->
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-medium text-gray-600">Status:</span>
+          <span id="subStatusBadge" class="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase"></span>
+        </div>
+
+        <!-- Period info -->
+        <div id="subPeriodRow" class="hidden">
+          <span class="text-sm text-gray-600">Current period ends:</span>
+          <span id="subPeriodEnd" class="text-sm font-medium ml-2"></span>
+        </div>
+
+        <!-- Cancellation pending notice -->
+        <div id="subCancelPending" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+          ⚠️ Your subscription is set to cancel at the end of the current billing period. You can continue using all features until then.
+        </div>
+
+        <!-- Plan info -->
+        <div class="bg-gray-50 rounded-lg p-4 mt-4">
+          <h3 class="font-bold text-sm mb-2">ReviewEngine Pro — £49/month</h3>
+          <ul class="text-sm text-gray-600 space-y-1">
+            <li>✓ Unlimited review requests (WhatsApp, SMS & email)</li>
+            <li>✓ Automatic follow-ups</li>
+            <li>✓ AI review replies</li>
+            <li>✓ Invoices, quotes & expense tracking</li>
+            <li>✓ Booking calendar</li>
+            <li>✓ Web dashboard</li>
+          </ul>
+        </div>
+
+        <!-- Cancel button -->
+        <div id="subCancelSection" class="pt-4 border-t border-gray-200 mt-6">
+          <p class="text-sm text-gray-500 mb-3">Need to cancel? No worries — you can cancel anytime. Your access continues until the end of your billing period.</p>
+          <button id="cancelSubBtn" onclick="cancelSubscription()"
+            class="px-5 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg font-medium text-sm hover:bg-red-100 transition">
+            Cancel Subscription
+          </button>
+        </div>
+      </div>
+
+      <!-- Inactive / no subscription -->
+      <div id="subInactive" class="hidden">
+        <div class="bg-gray-50 rounded-lg p-6 text-center">
+          <div class="text-3xl mb-3">💤</div>
+          <h3 class="font-bold text-lg mb-2">No Active Subscription</h3>
+          <p class="text-gray-500 text-sm mb-4">Subscribe to unlock all ReviewEngine features.</p>
+          <a href="#" id="subResubscribeLink"
+            class="inline-block px-6 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition text-sm">
+            Subscribe Now — £49/month
+          </a>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -1990,6 +2054,79 @@ async function deleteBooking(bookingId) {
   } catch { showToast('Network error.', 'error'); }
 }
 
+// ── Subscription ─────────────────────────────────
+async function loadSubscription() {
+  try {
+    const res = await authFetch('/api/subscription-status');
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+
+    document.getElementById('subLoading').classList.add('hidden');
+
+    const status = data.subscription_status || 'inactive';
+    if (status === 'inactive' && !data.stripe_subscription_id) {
+      document.getElementById('subInactive').classList.remove('hidden');
+      document.getElementById('subResubscribeLink').href = `/checkout.html?business_id=${bizId}`;
+      return;
+    }
+
+    document.getElementById('subDetails').classList.remove('hidden');
+
+    const badge = document.getElementById('subStatusBadge');
+    const colours = {
+      active: 'bg-green-100 text-green-800',
+      past_due: 'bg-yellow-100 text-yellow-800',
+      inactive: 'bg-red-100 text-red-800',
+      trial: 'bg-blue-100 text-blue-800',
+    };
+    badge.className = `inline-block px-3 py-1 rounded-full text-xs font-bold uppercase ${colours[status] || colours.inactive}`;
+    badge.textContent = status === 'past_due' ? 'Past Due' : status;
+
+    if (data.current_period_end) {
+      const d = new Date(data.current_period_end * 1000);
+      document.getElementById('subPeriodEnd').textContent = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+      document.getElementById('subPeriodRow').classList.remove('hidden');
+    }
+
+    if (data.cancel_at_period_end) {
+      document.getElementById('subCancelPending').classList.remove('hidden');
+      document.getElementById('cancelSubBtn').disabled = true;
+      document.getElementById('cancelSubBtn').textContent = 'Cancellation Pending';
+      document.getElementById('cancelSubBtn').classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
+    if (status === 'inactive') {
+      document.getElementById('subCancelSection').classList.add('hidden');
+    }
+
+  } catch {
+    document.getElementById('subLoading').textContent = 'Could not load subscription details.';
+  }
+}
+
+async function cancelSubscription() {
+  if (!confirm('Are you sure you want to cancel your subscription? You\'ll keep access until the end of your billing period.')) return;
+  const btn = document.getElementById('cancelSubBtn');
+  btn.disabled = true;
+  btn.textContent = 'Cancelling…';
+  try {
+    const res = await authFetch('/api/cancel-subscription', { method: 'POST' });
+    if (res.ok) {
+      showToast('Subscription cancelled. You\'ll keep access until the end of your billing period.', 'success');
+      loadSubscription();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.detail || 'Failed to cancel. Please try again.', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Cancel Subscription';
+    }
+  } catch {
+    showToast('Network error. Please try again.', 'error');
+    btn.disabled = false;
+    btn.textContent = 'Cancel Subscription';
+  }
+}
+
 // ── Init ─────────────────────────────────────────
 loadBusiness();
 loadStats();
@@ -2002,6 +2139,7 @@ loadQuotes();
 loadExpenses();
 loadBookings();
 loadAccounts();
+loadSubscription();
 </script>
 </body>
 </html>
