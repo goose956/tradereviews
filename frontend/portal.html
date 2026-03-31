@@ -12,8 +12,6 @@
     .badge-request_sent { background:#dbeafe; color:#1e40af; }
     .badge-follow_up_sent { background:#fef9c3; color:#854d0e; }
     .badge-review_request { background:#dbeafe; color:#1e40af; }
-    .badge-review_link { background:#dcfce7; color:#166534; }
-    .badge-follow_up { background:#fef9c3; color:#854d0e; }
     .badge-negative_alert { background:#fee2e2; color:#991b1b; }
     .badge-draft_notification { background:#f3e8ff; color:#6b21a8; }
     .badge-auto_reply_notification { background:#dbeafe; color:#1e40af; }
@@ -28,11 +26,6 @@
     .badge-rejected { background:#fee2e2; color:#991b1b; }
     .badge-awaiting_edit { background:#f3e8ff; color:#6b21a8; }
     .badge-campaign { background:#ede9fe; color:#5b21b6; }
-    .badge-pending { background:#fef9c3; color:#854d0e; }
-    .badge-sending { background:#dbeafe; color:#1e40af; }
-    .badge-completed { background:#dcfce7; color:#166534; }
-    .badge-partial { background:#fef9c3; color:#854d0e; }
-    .badge-failed { background:#fee2e2; color:#991b1b; }
     .badge-draft { background:#e5e7eb; color:#374151; }
     .badge-sent { background:#dbeafe; color:#1e40af; }
     .badge-paid { background:#dcfce7; color:#166534; }
@@ -41,8 +34,10 @@
     .badge-accepted { background:#dcfce7; color:#166534; }
     .badge-declined { background:#fee2e2; color:#991b1b; }
     .badge-expired { background:#fef9c3; color:#854d0e; }
-    .toggle-bg { width:44px; height:24px; border-radius:9999px; transition:background .2s; cursor:pointer; }
-    .toggle-dot { width:20px; height:20px; border-radius:9999px; background:#fff; transition:transform .2s; position:absolute; top:2px; left:2px; }
+    .toggle-bg { width:44px; height:24px; border-radius:9999px; transition:background .2s; cursor:pointer; background:#d1d5db; }
+    .toggle-dot { width:20px; height:20px; border-radius:9999px; background:#fff; transition:transform .2s; position:absolute; top:2px; left:2px; cursor:pointer; transform:translateX(0); box-shadow:0 1px 3px rgba(0,0,0,.2); }
+    .peer:checked ~ .toggle-bg { background:#22c55e; }
+    .peer:checked ~ .toggle-dot { transform:translateX(20px); }
     dialog::backdrop { background:rgba(0,0,0,.4); }
     dialog { border:none; border-radius:.75rem; padding:0; max-width:540px; width:90%; }
     .toast{position:fixed;top:1.5rem;right:1.5rem;left:1.5rem;z-index:9999;padding:.75rem 1.25rem;border-radius:.5rem;color:#fff;font-weight:600;font-size:.875rem;box-shadow:0 4px 12px rgba(0,0,0,.15);transform:translateY(-120%);transition:transform .3s ease;text-align:center;}
@@ -97,9 +92,10 @@
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 rounded-t-lg tab-active whitespace-nowrap" data-tab="settings">Settings</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="customers">Customers</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="messages">Messages</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="campaigns">Campaigns</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="invoices">Invoices</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="quotes">Quotes</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="expenses">Expenses</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="bookings">Bookings</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="accounts">Accounts</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="drafts">Drafts</button>
     </div>
@@ -143,17 +139,27 @@
           <label class="block text-sm font-medium text-gray-700 mb-1">Google Review Link</label>
           <input id="fReviewLink" type="url" placeholder="https://g.page/r/..." class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Google Place ID</label>
+          <input id="fPlaceId" type="text" placeholder="ChIJ..." class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+          <p class="text-xs text-gray-400 mt-1">Find it at <a href="https://developers.google.com/maps/documentation/places/web-service/place-id-lookup" target="_blank" class="underline text-blue-500">Google Place ID Finder</a></p>
+        </div>
       </div>
 
       <hr class="my-4" />
+
+      <!-- Google Connection Status -->
+      <div id="googleStatus" class="mb-4 rounded-lg p-4">
+        <!-- Populated by JS -->
+      </div>
 
       <h2 class="text-lg font-bold mb-2">Auto-Reply to Google Reviews</h2>
 
       <div class="flex items-center gap-4">
         <div class="relative">
           <input id="fAutoReply" type="checkbox" class="sr-only peer" />
-          <div class="toggle-bg bg-gray-300 peer-checked:bg-green-500" onclick="this.previousElementSibling.click()"></div>
-          <div class="toggle-dot peer-checked:translate-x-5" onclick="this.previousElementSibling.previousElementSibling.click()"></div>
+          <div class="toggle-bg" onclick="this.previousElementSibling.click()"></div>
+          <div class="toggle-dot" onclick="this.previousElementSibling.previousElementSibling.click()"></div>
         </div>
         <label class="text-sm font-medium text-gray-700">Automatically reply to new Google reviews</label>
       </div>
@@ -180,51 +186,33 @@
 
       <hr class="my-4" />
 
-      <h2 class="text-lg font-bold mb-2">Follow-up Settings</h2>
+      <h2 class="text-lg font-bold mb-2">Review Follow-Up Reminders</h2>
 
       <div class="flex items-center gap-4">
         <div class="relative">
           <input id="fFollowUp" type="checkbox" class="sr-only peer" />
-          <div class="toggle-bg bg-gray-300 peer-checked:bg-green-500" onclick="this.previousElementSibling.click()"></div>
-          <div class="toggle-dot peer-checked:translate-x-5" onclick="this.previousElementSibling.previousElementSibling.click()"></div>
+          <div class="toggle-bg" onclick="this.previousElementSibling.click()"></div>
+          <div class="toggle-dot" onclick="this.previousElementSibling.previousElementSibling.click()"></div>
         </div>
-        <label class="text-sm font-medium text-gray-700">Automatically follow up with customers who haven't responded</label>
+        <label class="text-sm font-medium text-gray-700">Send follow-up reminders to customers who haven't reviewed</label>
       </div>
 
       <div id="followUpOptions" class="mt-3 space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">1st follow-up message</label>
-          <textarea id="fFollowUpMsg" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Hi {first_name}, just a friendly reminder from {business_name} — we'd really appreciate your feedback! It only takes 30 seconds. 😊"></textarea>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">2nd follow-up message</label>
-          <textarea id="fFollowUpMsg2" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Hi {first_name}, we don't want to be a pest! But if you have a spare moment, {business_name} would love to hear how we did. Thank you! 🙏"></textarea>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">3rd follow-up message</label>
-          <textarea id="fFollowUpMsg3" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Hi {first_name}, last reminder from {business_name} — your feedback really helps us improve. We'd be grateful if you could share your experience. Thanks! ⭐"></textarea>
-        </div>
-        <p class="text-xs text-gray-400">Use <code>{first_name}</code> and <code>{business_name}</code> as placeholders.</p>
         <div class="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Days before follow-up</label>
-          <select id="fFollowUpDays" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
-            <option value="1">1 day</option>
-            <option value="2">2 days</option>
-            <option value="3" selected>3 days</option>
-            <option value="5">5 days</option>
-            <option value="7">7 days</option>
-          </select>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Days between reminders</label>
+            <input id="fFollowUpInterval" type="number" min="1" max="30" value="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Max reminders per customer</label>
+            <input id="fFollowUpMax" type="number" min="1" max="10" value="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
+          </div>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Max follow-ups per customer</label>
-          <select id="fMaxFollowUps" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
-            <option value="1">1</option>
-            <option value="2" selected>2</option>
-            <option value="3">3</option>
-          </select>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Follow-up message</label>
+          <textarea id="fFollowUpMessage" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Hi {first_name}, just a quick reminder — we'd really appreciate your feedback! It only takes a minute. Thank you 😊"></textarea>
         </div>
-        </div>
+        <p class="text-xs text-gray-400">Use <code>{first_name}</code> as a placeholder. The review link is appended automatically.</p>
       </div>
 
       <hr class="my-4" />
@@ -267,8 +255,8 @@
       <div class="flex items-center gap-4 mb-4">
         <div class="relative">
           <input id="fConfirmBeforeSend" type="checkbox" class="sr-only peer" />
-          <div class="toggle-bg bg-gray-300 peer-checked:bg-green-500" onclick="this.previousElementSibling.click()"></div>
-          <div class="toggle-dot peer-checked:translate-x-5" onclick="this.previousElementSibling.previousElementSibling.click()"></div>
+          <div class="toggle-bg" onclick="this.previousElementSibling.click()"></div>
+          <div class="toggle-dot" onclick="this.previousElementSibling.previousElementSibling.click()"></div>
         </div>
         <div>
           <label class="text-sm font-medium text-gray-700">Preview invoices &amp; quotes before sending</label>
@@ -352,8 +340,6 @@
             <th class="px-4 py-3 text-left">Name</th>
             <th class="px-4 py-3 text-left">Phone</th>
             <th class="px-4 py-3 text-left">Status</th>
-            <th class="px-4 py-3 text-left">Follow-ups</th>
-            <th class="px-4 py-3 text-left">Offers</th>
             <th class="px-4 py-3 text-left">Requested</th>
           </tr>
         </thead>
@@ -364,21 +350,41 @@
   </section>
 
   <!-- ───── Tab: Drafts ───── -->
-  <section id="panel-drafts" class="max-w-5xl mx-auto px-6 py-6 hidden">
-    <div class="bg-white rounded-lg shadow overflow-x-auto">
-      <table class="w-full text-sm min-w-[600px]">
-        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
-          <tr>
-            <th class="px-4 py-3 text-left">Reviewer</th>
-            <th class="px-4 py-3 text-left">Rating</th>
-            <th class="px-4 py-3 text-left">Review</th>
-            <th class="px-4 py-3 text-left">AI Reply</th>
-            <th class="px-4 py-3 text-left">Status</th>
-          </tr>
-        </thead>
-        <tbody id="draftsBody" class="divide-y divide-gray-100"></tbody>
-      </table>
-      <p id="noDrafts" class="hidden text-center text-gray-400 py-8">No review drafts yet.</p>
+  <section id="panel-drafts" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+
+    <div id="draftsGoogleWarning" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 text-sm text-amber-800">
+      ⚠️ <strong>Google Not Connected:</strong> You need to <a href="#" onclick="document.querySelector('[data-tab=settings]').click();return false" class="underline font-medium">connect your Google account</a> before you can post review replies.
+    </div>
+
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-sm text-blue-800">
+      ⭐ <strong>Google Review Replies:</strong> When customers leave reviews, AI generates a draft reply. Approve it, edit it, or write your own.
+    </div>
+
+    <div id="draftsCards" class="space-y-4"></div>
+    <p id="noDrafts" class="hidden text-center text-gray-400 py-8">No review drafts yet. Reviews will appear here when customers leave Google reviews.</p>
+
+    <!-- Edit Reply Modal -->
+    <div id="editReplyModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+      <div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4">
+        <div class="flex items-center justify-between px-6 py-4 border-b">
+          <h3 class="font-bold text-lg">✏️ Edit & Reply</h3>
+          <button onclick="document.getElementById('editReplyModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+        <div class="px-6 py-4 space-y-3">
+          <div class="bg-gray-50 rounded-lg p-3">
+            <p class="text-xs text-gray-500 mb-1">Original Review</p>
+            <p id="editReplyReview" class="text-sm text-gray-700"></p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Your Reply</label>
+            <textarea id="editReplyText" rows="5" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none"></textarea>
+          </div>
+          <input type="hidden" id="editReplyDraftId" />
+          <button onclick="submitEditedReply()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-lg shadow transition">
+            Post Reply to Google
+          </button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -401,116 +407,26 @@
     </div>
   </section>
 
-  <!-- ───── Tab: Campaigns ───── -->
-  <section id="panel-campaigns" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
-
-    <!-- Compose Offer -->
-    <div class="bg-white rounded-lg shadow p-4 sm:p-6 mb-6">
-      <h2 class="text-lg font-bold mb-1">Send an Offer</h2>
-      <p class="text-sm text-gray-500 mb-4">
-        Message your opted-in customers. Daily limit: <strong>50 messages</strong>.
-        Only customers who agreed to receive offers will be contacted.
-      </p>
-
-      <div class="flex items-center gap-3 mb-4">
-        <div class="bg-green-50 border border-green-200 rounded-lg px-4 py-2 text-center">
-          <span id="optedInCount" class="text-2xl font-bold text-green-700">0</span>
-          <p class="text-xs text-gray-500">Opted-in customers</p>
-        </div>
-      </div>
-
-      <form id="campaignForm">
-        <div class="mb-3">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Message</label>
-          <textarea id="campaignMsg" rows="4" maxlength="1000"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm"
-            placeholder="e.g. Hi! 👋 Just a heads up from Smiths Plumbing — we have 20% off all boiler services this month. Reply to book!"></textarea>
-          <p class="text-xs text-gray-400 mt-1"><span id="campaignCharCount">0</span>/1000 characters</p>
-        </div>
-        <button type="submit" id="campaignSendBtn"
-          class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed">
-          Send Campaign
-        </button>
-      </form>
-    </div>
-
-    <!-- Campaign History -->
-    <div class="bg-white rounded-lg shadow overflow-x-auto">
-      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">Campaign History</h3>
-      <table class="w-full text-sm min-w-[500px]">
-        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
-          <tr>
-            <th class="px-4 py-3 text-left">Date</th>
-            <th class="px-4 py-3 text-left">Message</th>
-            <th class="px-4 py-3 text-left">Sent</th>
-            <th class="px-4 py-3 text-left">Failed</th>
-            <th class="px-4 py-3 text-left">Status</th>
-          </tr>
-        </thead>
-        <tbody id="campaignsBody" class="divide-y divide-gray-100"></tbody>
-      </table>
-      <p id="noCampaigns" class="hidden text-center text-gray-400 py-8">No campaigns sent yet.</p>
-    </div>
-  </section>
-
   <!-- ───── Tab: Invoices ───── -->
   <section id="panel-invoices" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
 
-    <!-- Create Invoice -->
-    <div class="bg-white rounded-lg shadow p-4 sm:p-6 mb-6">
-      <h2 class="text-lg font-bold mb-1">Create Invoice</h2>
-      <p class="text-sm text-gray-500 mb-4">Add line items and send to your customer.</p>
-
-      <form id="invoiceForm" class="space-y-4">
-        <div class="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-            <select id="invCustomer" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-green-500 outline-none">
-              <option value="">Select customer…</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-            <input id="invDueDate" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" />
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
-          <input id="invTerms" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none" placeholder="Payment due within 14 days" />
-        </div>
-
-        <!-- Line items -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Line Items</label>
-          <div id="invLineItems" class="space-y-2"></div>
-          <button type="button" onclick="addInvLineItem()" class="mt-2 text-sm text-green-600 hover:text-green-700 font-medium">+ Add Line Item</button>
-        </div>
-
-        <!-- Totals -->
-        <div class="bg-gray-50 rounded-lg p-4 text-sm space-y-1">
-          <div class="flex justify-between"><span>Subtotal</span><span id="invSubtotal">0.00</span></div>
-          <div class="flex justify-between"><span id="invTaxLabel">VAT (20%)</span><span id="invTaxAmount">0.00</span></div>
-          <div class="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total</span><span id="invTotal">0.00</span></div>
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-          <textarea id="invNotes" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="Optional notes for the customer"></textarea>
-        </div>
-
-        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-lg shadow transition">
-          Create Invoice
-        </button>
-      </form>
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-sm text-blue-800">
+      💬 <strong>To create an invoice:</strong> Just ask the bot on WhatsApp. It will build and send it for you.
     </div>
 
     <!-- Invoice History -->
     <div class="bg-white rounded-lg shadow overflow-x-auto">
-      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">Invoice History</h3>
+      <div class="flex items-center justify-between px-4 pt-4">
+        <h3 class="text-sm font-bold text-gray-600 uppercase">Invoice History</h3>
+        <div class="flex gap-2">
+          <button id="invDownloadSelected" onclick="downloadSelectedInvoicePDFs()" class="hidden text-xs bg-green-100 hover:bg-green-200 text-green-700 font-medium px-3 py-1.5 rounded">📥 Download Selected</button>
+          <button onclick="downloadAllInvoicePDFs()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-3 py-1.5 rounded">📦 Download All PDFs</button>
+        </div>
+      </div>
       <table class="w-full text-sm min-w-[700px]">
         <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
           <tr>
+            <th class="px-4 py-3 text-left"><input type="checkbox" id="invSelectAll" onchange="toggleAllInvoices(this)" class="rounded" /></th>
             <th class="px-4 py-3 text-left">Number</th>
             <th class="px-4 py-3 text-left">Customer</th>
             <th class="px-4 py-3 text-left">Total</th>
@@ -593,6 +509,157 @@
     </div>
   </section>
 
+  <!-- ───── Tab: Expenses ───── -->
+  <section id="panel-expenses" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-red-600" id="expTotalSpent">£0.00</p>
+        <p class="text-xs text-gray-500 mt-1">Total Expenses</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-orange-600" id="expTotalTax">£0.00</p>
+        <p class="text-xs text-gray-500 mt-1">Total VAT (Reclaimable)</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-blue-600" id="expThisMonth">£0.00</p>
+        <p class="text-xs text-gray-500 mt-1">This Month</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-gray-700" id="expCount">0</p>
+        <p class="text-xs text-gray-500 mt-1">Receipts Scanned</p>
+      </div>
+    </div>
+
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-sm text-blue-800">
+      📸 <strong>To add an expense:</strong> Just send a photo of your receipt to the bot on WhatsApp. AI will read it automatically.
+    </div>
+
+    <!-- Category Breakdown -->
+    <div class="bg-white rounded-lg shadow overflow-x-auto mb-6">
+      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">Spending by Category</h3>
+      <div id="expCategoryGrid" class="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4">
+      </div>
+      <p id="noExpCategories" class="hidden text-center text-gray-400 py-4">No expenses yet.</p>
+    </div>
+
+    <!-- Monthly Breakdown -->
+    <div class="bg-white rounded-lg shadow overflow-x-auto mb-6">
+      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">Monthly Breakdown</h3>
+      <table class="w-full text-sm min-w-[400px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Month</th>
+            <th class="px-4 py-3 text-right">Total</th>
+            <th class="px-4 py-3 text-right">VAT</th>
+            <th class="px-4 py-3 text-right">Receipts</th>
+          </tr>
+        </thead>
+        <tbody id="expMonthsBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noExpMonths" class="hidden text-center text-gray-400 py-8">No expenses yet. Send a receipt photo via WhatsApp.</p>
+    </div>
+
+    <!-- All Expenses List -->
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <div class="flex items-center justify-between px-4 pt-4">
+        <h3 class="text-sm font-bold text-gray-600 uppercase">All Expenses</h3>
+        <div class="flex gap-2">
+          <button onclick="downloadAllReceiptImages()" class="text-xs bg-green-100 hover:bg-green-200 text-green-700 font-medium px-3 py-1.5 rounded">📷 Download All Receipts</button>
+          <button onclick="exportExpensesCSV()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-3 py-1.5 rounded">📦 Export CSV</button>
+        </div>
+      </div>
+      <table class="w-full text-sm min-w-[600px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Date</th>
+            <th class="px-4 py-3 text-left">Vendor</th>
+            <th class="px-4 py-3 text-left">Category</th>
+            <th class="px-4 py-3 text-right">Total</th>
+            <th class="px-4 py-3 text-right">VAT</th>
+            <th class="px-4 py-3 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="expensesBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noExpenses" class="hidden text-center text-gray-400 py-8">No expenses yet. Send a receipt photo via WhatsApp to get started.</p>
+    </div>
+
+    <!-- Receipt Detail Modal -->
+    <div id="receiptModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+      <div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-6 py-4 border-b">
+          <h3 class="font-bold text-lg">🧾 Receipt Details</h3>
+          <button onclick="document.getElementById('receiptModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+        <div id="receiptModalBody" class="px-6 py-4 space-y-3 text-sm"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Bookings ───── -->
+  <section id="panel-bookings" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-blue-600" id="bkTotal">0</p>
+        <p class="text-xs text-gray-500 mt-1">Total Bookings</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-green-600" id="bkUpcoming">0</p>
+        <p class="text-xs text-gray-500 mt-1">Upcoming</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-yellow-600" id="bkToday">0</p>
+        <p class="text-xs text-gray-500 mt-1">Today</p>
+      </div>
+      <div class="bg-white rounded-lg shadow p-5 text-center">
+        <p class="text-2xl sm:text-3xl font-bold text-gray-500" id="bkCompleted">0</p>
+        <p class="text-xs text-gray-500 mt-1">Completed</p>
+      </div>
+    </div>
+
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-sm text-blue-800">
+      📅 <strong>To add a booking:</strong> Send a message via WhatsApp like <em>"Boiler service Tuesday 2pm"</em> after choosing 📅 New Booking.
+    </div>
+
+    <!-- Calendar Month View -->
+    <div class="bg-white rounded-lg shadow mb-6">
+      <div class="flex items-center justify-between px-4 py-3 border-b">
+        <button onclick="changeMonth(-1)" class="text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">&larr; Prev</button>
+        <h3 class="text-sm font-bold text-gray-700 uppercase" id="calMonthLabel">March 2026</h3>
+        <button onclick="changeMonth(1)" class="text-gray-500 hover:text-gray-700 px-2 py-1 rounded hover:bg-gray-100">Next &rarr;</button>
+      </div>
+      <div class="grid grid-cols-7 text-center text-xs font-medium text-gray-500 border-b">
+        <div class="py-2">Mon</div><div class="py-2">Tue</div><div class="py-2">Wed</div>
+        <div class="py-2">Thu</div><div class="py-2">Fri</div><div class="py-2">Sat</div><div class="py-2">Sun</div>
+      </div>
+      <div id="calGrid" class="grid grid-cols-7 min-h-[320px]"></div>
+    </div>
+
+    <!-- All Bookings List -->
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <h3 class="px-4 pt-4 text-sm font-bold text-gray-600 uppercase">All Bookings</h3>
+      <table class="w-full text-sm min-w-[600px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Date</th>
+            <th class="px-4 py-3 text-left">Time</th>
+            <th class="px-4 py-3 text-left">Job</th>
+            <th class="px-4 py-3 text-left">Customer</th>
+            <th class="px-4 py-3 text-left">Duration</th>
+            <th class="px-4 py-3 text-left">Status</th>
+            <th class="px-4 py-3 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="bookingsBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noBookings" class="hidden text-center text-gray-400 py-8">No bookings yet. Use WhatsApp to add your first booking.</p>
+    </div>
+  </section>
+
   <!-- ───── Tab: Accounts ───── -->
   <section id="panel-accounts" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
 
@@ -671,6 +738,15 @@ fetch('/auth/me', { headers: { 'Authorization': 'Bearer ' + reToken } })
 
 const bizId = reBizId;
 const API = `/member/business/${bizId}`;
+const AUTH_HEADERS = { 'Authorization': 'Bearer ' + reToken };
+
+/** Fetch wrapper that auto-injects the auth header. */
+async function authFetch(url, opts = {}) {
+  opts.headers = Object.assign({}, AUTH_HEADERS, opts.headers || {});
+  const r = await fetch(url, opts);
+  if (r.status === 401) { localStorage.clear(); window.location.href = '/login.html'; }
+  return r;
+}
 
 async function doLogout() {
   try {
@@ -698,7 +774,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 // ── Load business info ───────────────────────────
 async function loadBusiness() {
-  const res = await fetch(API);
+  const res = await authFetch(API);
   if (!res.ok) return;
   const biz = await res.json();
 
@@ -709,16 +785,71 @@ async function loadBusiness() {
   document.getElementById('fPhone').value = biz.phone_number || '';
   document.getElementById('fEmail').value = biz.email || '';
   document.getElementById('fReviewLink').value = biz.google_review_link || '';
-  document.getElementById('fFollowUp').checked = !!biz.follow_up_enabled;
-  document.getElementById('fFollowUpDays').value = biz.follow_up_days || 3;
-  document.getElementById('fMaxFollowUps').value = biz.max_follow_ups || 2;
-  document.getElementById('fFollowUpMsg').value = biz.follow_up_message || '';
-  document.getElementById('fFollowUpMsg2').value = biz.follow_up_message_2 || '';
-  document.getElementById('fFollowUpMsg3').value = biz.follow_up_message_3 || '';
+  document.getElementById('fPlaceId').value = biz.google_place_id || '';
+
+  // Google connection status
+  const googleConnected = !!biz.google_connected;
+  const hasPlaceId = !!(biz.google_place_id);
+  const gsEl = document.getElementById('googleStatus');
+  if (googleConnected) {
+    gsEl.className = 'mb-4 rounded-lg p-4 bg-green-50 border border-green-200';
+    gsEl.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-green-600 text-xl">✅</span>
+          <div>
+            <p class="font-semibold text-green-800">Google Business Profile Connected (Full Access)</p>
+            <p class="text-sm text-green-600">Reviews are polled automatically and replies can be posted directly.</p>
+          </div>
+        </div>
+        <button onclick="window.open('/auth/google/login?business_id='+bizId,'_blank')" class="text-sm text-green-700 underline hover:text-green-900">Reconnect</button>
+      </div>`;
+  } else if (hasPlaceId) {
+    gsEl.className = 'mb-4 rounded-lg p-4 bg-blue-50 border border-blue-200';
+    gsEl.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-blue-500 text-xl">📡</span>
+          <div>
+            <p class="font-semibold text-blue-800">Review Notifications Active</p>
+            <p class="text-sm text-blue-600">We'll notify you of new reviews. You can copy AI-suggested replies and post them on Google manually.</p>
+          </div>
+        </div>
+      </div>`;
+  } else {
+    gsEl.className = 'mb-4 rounded-lg p-4 bg-amber-50 border border-amber-200';
+    gsEl.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-amber-500 text-xl">⚠️</span>
+          <div>
+            <p class="font-semibold text-amber-800">Google Reviews Not Set Up</p>
+            <p class="text-sm text-amber-600">Enter your Google Place ID above to get notified of new reviews with AI-suggested replies.</p>
+          </div>
+        </div>
+      </div>`;
+  }
+  // Disable review settings if no Google connection at all
+  const hasAnyGoogle = googleConnected || hasPlaceId;
+  document.querySelectorAll('#autoReplyOptions input, #autoReplyOptions select, #autoReplyOptions textarea').forEach(el => {
+    el.disabled = !googleConnected;
+    if (!googleConnected) el.classList.add('opacity-50');
+    else el.classList.remove('opacity-50');
+  });
+  document.querySelectorAll('#followUpOptions input, #followUpOptions textarea').forEach(el => {
+    el.disabled = !hasAnyGoogle;
+    if (!hasAnyGoogle) el.classList.add('opacity-50');
+    else el.classList.remove('opacity-50');
+  });
+
   document.getElementById('fAutoReply').checked = !!biz.auto_reply_enabled;
   document.getElementById('fAutoReplyThreshold').value = biz.auto_reply_threshold || 4;
   document.getElementById('fAutoReplyPositive').value = biz.auto_reply_positive_msg || '';
   document.getElementById('fAutoReplyNegative').value = biz.auto_reply_negative_msg || '';
+  document.getElementById('fFollowUp').checked = biz.followup_enabled !== 0;
+  document.getElementById('fFollowUpInterval').value = biz.followup_interval_days || 3;
+  document.getElementById('fFollowUpMax').value = biz.followup_max_count || 2;
+  document.getElementById('fFollowUpMessage').value = biz.followup_message || '';
   document.getElementById('fConfirmBeforeSend').checked = !!biz.confirm_before_send;
   document.getElementById('fAddress').value = biz.business_address || '';
   document.getElementById('fCity').value = biz.business_city || '';
@@ -742,16 +873,19 @@ async function loadBusiness() {
   window._bizTaxLabel = biz.tax_label || 'VAT';
   window._bizTaxRate = biz.tax_rate ?? 20;
   window._bizCurrency = biz.currency || 'GBP';
-  toggleFollowUpOptions();
+  window._googleConnected = googleConnected;
+  window._bizReviewLink = biz.google_review_link || '';
+  // Show/hide drafts warning
+  const draftsWarning = document.getElementById('draftsGoogleWarning');
+  if (!googleConnected && !hasPlaceId) {
+    draftsWarning.classList.remove('hidden');
+    draftsWarning.innerHTML = '⚠️ <strong>Google Not Set Up:</strong> Go to <a href="#" onclick="document.querySelector(\'[data-tab=settings]\').click();return false" class="underline font-medium">Settings</a> and enter your Google Place ID to start receiving review notifications.';
+  } else {
+    draftsWarning.classList.add('hidden');
+  }
   toggleAutoReplyOptions();
+  toggleFollowUpOptions();
 }
-
-// ── Toggle follow-up options visibility ──────────
-const followUpCheckbox = document.getElementById('fFollowUp');
-function toggleFollowUpOptions() {
-  document.getElementById('followUpOptions').style.display = followUpCheckbox.checked ? 'block' : 'none';
-}
-followUpCheckbox.addEventListener('change', toggleFollowUpOptions);
 
 // ── Toggle auto-reply options visibility ─────────
 const autoReplyCheckbox = document.getElementById('fAutoReply');
@@ -759,6 +893,13 @@ function toggleAutoReplyOptions() {
   document.getElementById('autoReplyOptions').style.display = autoReplyCheckbox.checked ? 'block' : 'none';
 }
 autoReplyCheckbox.addEventListener('change', toggleAutoReplyOptions);
+
+// ── Toggle follow-up options visibility ──────────
+const followUpCheckbox = document.getElementById('fFollowUp');
+function toggleFollowUpOptions() {
+  document.getElementById('followUpOptions').style.display = followUpCheckbox.checked ? 'block' : 'none';
+}
+followUpCheckbox.addEventListener('change', toggleFollowUpOptions);
 
 // ── Save business settings ───────────────────────
 document.getElementById('settingsForm').addEventListener('submit', async (e) => {
@@ -770,12 +911,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     phone_number: document.getElementById('fPhone').value.trim(),
     email: document.getElementById('fEmail').value.trim(),
     google_review_link: document.getElementById('fReviewLink').value.trim(),
-    follow_up_enabled: document.getElementById('fFollowUp').checked,
-    follow_up_days: parseInt(document.getElementById('fFollowUpDays').value),
-    max_follow_ups: parseInt(document.getElementById('fMaxFollowUps').value),
-    follow_up_message: document.getElementById('fFollowUpMsg').value.trim(),
-    follow_up_message_2: document.getElementById('fFollowUpMsg2').value.trim(),
-    follow_up_message_3: document.getElementById('fFollowUpMsg3').value.trim(),
+    google_place_id: document.getElementById('fPlaceId').value.trim(),
     auto_reply_enabled: document.getElementById('fAutoReply').checked,
     auto_reply_threshold: parseInt(document.getElementById('fAutoReplyThreshold').value),
     auto_reply_positive_msg: document.getElementById('fAutoReplyPositive').value.trim(),
@@ -793,12 +929,16 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     accepted_payment_methods: [...document.querySelectorAll('.pay-method-cb:checked')].map(cb => cb.value).join(',') || 'cash',
     payment_link: document.getElementById('fPaymentLink').value.trim(),
     confirm_before_send: document.getElementById('fConfirmBeforeSend').checked,
+    followup_enabled: document.getElementById('fFollowUp').checked,
+    followup_interval_days: parseInt(document.getElementById('fFollowUpInterval').value) || 3,
+    followup_max_count: parseInt(document.getElementById('fFollowUpMax').value) || 2,
+    followup_message: document.getElementById('fFollowUpMessage').value.trim(),
   };
 
   // Remove empty strings so we don't overwrite with blanks
   Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k]; });
 
-  const res = await fetch(API, {
+  const res = await authFetch(API, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -813,7 +953,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
 
 // ── Load stats ───────────────────────────────────
 async function loadStats() {
-  const res = await fetch(API + '/stats');
+  const res = await authFetch(API + '/stats');
   if (!res.ok) return;
   const s = await res.json();
   document.getElementById('statRequests').textContent = s.total_review_requests;
@@ -823,7 +963,7 @@ async function loadStats() {
 
 // ── Load customers table ─────────────────────────
 async function loadCustomers() {
-  const res = await fetch(API + '/customers');
+  const res = await authFetch(API + '/customers');
   if (!res.ok) return;
   const customers = await res.json();
   const tbody = document.getElementById('customersBody');
@@ -839,13 +979,10 @@ async function loadCustomers() {
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-gray-50';
     const date = c.review_requested_at ? new Date(c.review_requested_at).toLocaleDateString() : '—';
-    const optIn = c.marketing_opt_in ? '<span class="text-green-600 font-semibold text-xs">✓ Opted in</span>' : '<span class="text-gray-400 text-xs">—</span>';
     tr.innerHTML = `
       <td class="px-4 py-3 font-medium">${esc(c.name)}</td>
       <td class="px-4 py-3 text-gray-600">${esc(c.phone_number)}</td>
       <td class="px-4 py-3"><span class="badge badge-${c.status}">${c.status.replace(/_/g, ' ')}</span></td>
-      <td class="px-4 py-3 text-gray-600">${c.follow_up_count || 0}</td>
-      <td class="px-4 py-3">${optIn}</td>
       <td class="px-4 py-3 text-gray-500">${date}</td>
     `;
     tbody.appendChild(tr);
@@ -854,7 +991,7 @@ async function loadCustomers() {
 
 // ── Load messages table ──────────────────────────
 async function loadMessages() {
-  const res = await fetch(API + '/messages');
+  const res = await authFetch(API + '/messages');
   if (!res.ok) return;
   const messages = await res.json();
   const tbody = document.getElementById('messagesBody');
@@ -884,11 +1021,11 @@ async function loadMessages() {
 
 // ── Load drafts table ────────────────────────────
 async function loadDrafts() {
-  const res = await fetch(API + '/drafts');
+  const res = await authFetch(API + '/drafts');
   if (!res.ok) return;
   const drafts = await res.json();
-  const tbody = document.getElementById('draftsBody');
-  tbody.innerHTML = '';
+  const container = document.getElementById('draftsCards');
+  container.innerHTML = '';
 
   if (!drafts.length) {
     document.getElementById('noDrafts').classList.remove('hidden');
@@ -897,18 +1034,140 @@ async function loadDrafts() {
   document.getElementById('noDrafts').classList.add('hidden');
 
   drafts.forEach(d => {
-    const tr = document.createElement('tr');
-    tr.className = 'hover:bg-gray-50';
     const stars = '⭐'.repeat(d.star_rating || 0);
-    tr.innerHTML = `
-      <td class="px-4 py-3 font-medium">${esc(d.reviewer_name || 'Anonymous')}</td>
-      <td class="px-4 py-3">${stars}</td>
-      <td class="px-4 py-3 text-gray-600 max-w-[200px] truncate">${esc(d.review_text || '')}</td>
-      <td class="px-4 py-3 text-gray-600 max-w-[200px] truncate">${esc(d.ai_draft_reply || '')}</td>
-      <td class="px-4 py-3"><span class="badge badge-${d.status}">${d.status.replace(/_/g, ' ')}</span></td>
+    const isPending = d.status === 'pending_approval' || d.status === 'awaiting_edit';
+    const isPosted = d.status === 'posted' || d.status === 'auto_replied';
+    const isRejected = d.status === 'rejected';
+
+    const statusColors = {
+      pending_approval: 'bg-yellow-100 text-yellow-800',
+      awaiting_edit: 'bg-blue-100 text-blue-800',
+      posted: 'bg-green-100 text-green-800',
+      auto_replied: 'bg-green-100 text-green-800',
+      rejected: 'bg-red-100 text-red-800',
+      auto_reply_failed: 'bg-red-100 text-red-800',
+    };
+    const statusClass = statusColors[d.status] || 'bg-gray-100 text-gray-800';
+
+    const actions = isPending ? (window._googleConnected ? `
+      <div class="flex gap-2 mt-3">
+        <button onclick="approveDraft('${d.id}', this)" class="text-sm bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg">✅ Approve & Post</button>
+        <button onclick="openEditReply('${d.id}')" class="text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg">✏️ Edit & Reply</button>
+        <button onclick="rejectDraft('${d.id}', this)" class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium px-4 py-2 rounded-lg">❌ Reject</button>
+      </div>` : `
+      <div class="flex gap-2 mt-3">
+        <button onclick="copyDraftReply('${d.id}')" class="text-sm bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg">📋 Copy Reply</button>
+        ${window._bizReviewLink ? `<a href="${esc(window._bizReviewLink)}" target="_blank" class="text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg inline-flex items-center">↗️ Reply on Google</a>` : ''}
+        <button onclick="rejectDraft('${d.id}', this)" class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium px-4 py-2 rounded-lg">❌ Dismiss</button>
+      </div>`) : '';
+
+    const postedLabel = isPosted
+      ? `<div class="mt-3 bg-green-50 border border-green-200 rounded-lg p-3"><p class="text-xs text-green-600 font-medium mb-1">✅ Reply posted to Google</p><p class="text-sm text-gray-700">${esc(d.ai_draft_reply || '')}</p></div>`
+      : '';
+
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-lg shadow p-4 sm:p-5';
+    card.id = `draft-${d.id}`;
+    card.innerHTML = `
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <span class="font-medium text-gray-900">${esc(d.reviewer_name || 'Anonymous')}</span>
+          <span class="ml-2">${stars}</span>
+          <span class="ml-2 text-xs px-2 py-0.5 rounded-full ${statusClass}">${d.status.replace(/_/g, ' ')}</span>
+        </div>
+        <span class="text-xs text-gray-400">${d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}</span>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-3 mb-3">
+        <p class="text-xs text-gray-500 mb-1 font-medium">Customer Review</p>
+        <p class="text-sm text-gray-700">${esc(d.review_text || 'No review text')}</p>
+      </div>
+      ${isPending ? `<div class="bg-blue-50 rounded-lg p-3">
+        <p class="text-xs text-blue-600 mb-1 font-medium">🤖 AI Suggested Reply</p>
+        <p class="text-sm text-gray-700">${esc(d.ai_draft_reply || '')}</p>
+      </div>` : ''}
+      ${postedLabel}
+      ${isRejected ? '<p class="mt-2 text-xs text-gray-400">No reply was posted.</p>' : ''}
+      ${actions}
     `;
-    tbody.appendChild(tr);
+    container.appendChild(card);
   });
+}
+
+async function approveDraft(draftId, btn) {
+  btn.disabled = true; btn.textContent = 'Posting...';
+  try {
+    const res = await authFetch(`${API}/drafts/${draftId}/approve`, { method: 'POST' });
+    if (res.ok) {
+      showToast('Reply posted to Google!', 'success');
+      loadDrafts();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.detail || 'Failed to post reply.', 'error');
+      btn.disabled = false; btn.textContent = '✅ Approve & Post';
+    }
+  } catch { showToast('Network error.', 'error'); btn.disabled = false; btn.textContent = '✅ Approve & Post'; }
+}
+
+function copyDraftReply(draftId) {
+  const card = document.getElementById(`draft-${draftId}`);
+  const reply = card?.querySelector('.bg-blue-50 .text-gray-700')?.textContent || '';
+  if (!reply) { showToast('No reply text to copy.', 'error'); return; }
+  navigator.clipboard.writeText(reply).then(() => {
+    showToast('Reply copied to clipboard! Now paste it on Google.', 'success');
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = reply; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    showToast('Reply copied!', 'success');
+  });
+}
+
+function openEditReply(draftId) {
+  const card = document.getElementById(`draft-${draftId}`);
+  const reviewText = card?.querySelector('.bg-gray-50 .text-gray-700')?.textContent || '';
+  const aiReply = card?.querySelector('.bg-blue-50 .text-gray-700')?.textContent || '';
+  document.getElementById('editReplyReview').textContent = reviewText;
+  document.getElementById('editReplyText').value = aiReply;
+  document.getElementById('editReplyDraftId').value = draftId;
+  document.getElementById('editReplyModal').classList.remove('hidden');
+}
+
+async function submitEditedReply() {
+  const draftId = document.getElementById('editReplyDraftId').value;
+  const replyText = document.getElementById('editReplyText').value.trim();
+  if (!replyText) { showToast('Reply cannot be empty.', 'error'); return; }
+
+  try {
+    const res = await authFetch(`${API}/drafts/${draftId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reply_text: replyText }),
+    });
+    if (res.ok) {
+      showToast('Custom reply posted to Google!', 'success');
+      document.getElementById('editReplyModal').classList.add('hidden');
+      loadDrafts();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.detail || 'Failed to post reply.', 'error');
+    }
+  } catch { showToast('Network error.', 'error'); }
+}
+
+async function rejectDraft(draftId, btn) {
+  if (!confirm('Reject this draft? No reply will be posted.')) return;
+  btn.disabled = true;
+  try {
+    const res = await authFetch(`${API}/drafts/${draftId}/reject`, { method: 'POST' });
+    if (res.ok) {
+      showToast('Draft rejected.', 'success');
+      loadDrafts();
+    } else {
+      showToast('Failed to reject draft.', 'error');
+      btn.disabled = false;
+    }
+  } catch { showToast('Network error.', 'error'); btn.disabled = false; }
 }
 
 // ── Toast notification ────────────────────────
@@ -931,87 +1190,6 @@ function esc(s) {
   d.textContent = s || '';
   return d.innerHTML;
 }
-
-// ── Load opted-in count ──────────────────────────
-async function loadOptedInCount() {
-  const res = await fetch(API + '/opted-in-count');
-  if (!res.ok) return;
-  const data = await res.json();
-  document.getElementById('optedInCount').textContent = data.opted_in;
-  const btn = document.getElementById('campaignSendBtn');
-  if (data.opted_in === 0) btn.disabled = true;
-  else btn.disabled = false;
-}
-
-// ── Load campaigns table ────────────────────────
-async function loadCampaigns() {
-  const res = await fetch(API + '/campaigns');
-  if (!res.ok) return;
-  const campaigns = await res.json();
-  const tbody = document.getElementById('campaignsBody');
-  tbody.innerHTML = '';
-
-  if (!campaigns.length) {
-    document.getElementById('noCampaigns').classList.remove('hidden');
-    return;
-  }
-  document.getElementById('noCampaigns').classList.add('hidden');
-
-  campaigns.forEach(c => {
-    const tr = document.createElement('tr');
-    tr.className = 'hover:bg-gray-50';
-    const date = c.created_at ? new Date(c.created_at).toLocaleString() : '—';
-    tr.innerHTML = `
-      <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">${date}</td>
-      <td class="px-4 py-3 text-gray-600 max-w-[300px] truncate">${esc(c.message_body)}</td>
-      <td class="px-4 py-3 text-green-600 font-medium">${c.sent_count}/${c.total_recipients}</td>
-      <td class="px-4 py-3 text-red-500">${c.failed_count || 0}</td>
-      <td class="px-4 py-3"><span class="badge badge-${c.status}">${c.status}</span></td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-// ── Campaign form ───────────────────────────────
-const campaignMsgEl = document.getElementById('campaignMsg');
-if (campaignMsgEl) {
-  campaignMsgEl.addEventListener('input', () => {
-    document.getElementById('campaignCharCount').textContent = campaignMsgEl.value.length;
-  });
-}
-
-document.getElementById('campaignForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const msg = document.getElementById('campaignMsg').value.trim();
-  if (!msg) { showToast('Please enter a message.', 'error'); return; }
-
-  const btn = document.getElementById('campaignSendBtn');
-  btn.disabled = true;
-  btn.textContent = 'Sending…';
-
-  try {
-    const res = await fetch(API + '/campaigns', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message_body: msg }),
-    });
-    const data = await res.json();
-
-    if (res.ok) {
-      showToast(`Campaign sent! ${data.sent} delivered, ${data.failed} failed.`, 'success');
-      document.getElementById('campaignMsg').value = '';
-      document.getElementById('campaignCharCount').textContent = '0';
-      loadCampaigns();
-    } else {
-      showToast(data.detail || 'Failed to send campaign.', 'error');
-    }
-  } catch (err) {
-    showToast('Network error. Please try again.', 'error');
-  }
-
-  btn.disabled = false;
-  btn.textContent = 'Send Campaign';
-});
 
 // ── Currency symbols ─────────────────────────────
 const currencySymbols = { GBP:'£', USD:'$', EUR:'€', AUD:'A$', CAD:'C$', NZD:'NZ$', ZAR:'R' };
@@ -1062,13 +1240,14 @@ function collectLineItems(prefix) {
   return items;
 }
 
-// ── Load customer dropdowns (for invoice/quote forms) ──
+// ── Load customer dropdowns (for quote form) ──
 async function loadCustomerDropdowns() {
-  const res = await fetch(API + '/customers');
+  const res = await authFetch(API + '/customers');
   if (!res.ok) return;
   const custs = await res.json();
-  ['invCustomer', 'quoCustomer'].forEach(selId => {
+  ['quoCustomer'].forEach(selId => {
     const sel = document.getElementById(selId);
+    if (!sel) return;
     // Keep the first "Select customer…" option
     while (sel.options.length > 1) sel.remove(1);
     custs.forEach(c => {
@@ -1084,17 +1263,21 @@ async function loadCustomerDropdowns() {
 }
 
 // ── Invoices ─────────────────────────────────────
+let _allInvoices = [];
 async function loadInvoices() {
-  const res = await fetch(API + '/invoices');
+  const res = await authFetch(API + '/invoices');
   if (!res.ok) return;
-  const invoices = await res.json();
+  _allInvoices = await res.json();
   const tbody = document.getElementById('invoicesBody');
   tbody.innerHTML = '';
+  const selAll = document.getElementById('invSelectAll');
+  if (selAll) selAll.checked = false;
+  updateInvDownloadBtn();
 
-  if (!invoices.length) { document.getElementById('noInvoices').classList.remove('hidden'); return; }
+  if (!_allInvoices.length) { document.getElementById('noInvoices').classList.remove('hidden'); return; }
   document.getElementById('noInvoices').classList.add('hidden');
 
-  invoices.forEach(inv => {
+  _allInvoices.forEach(inv => {
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-gray-50';
     const due = inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '—';
@@ -1107,6 +1290,7 @@ async function loadInvoices() {
       ? `<button onclick="showMarkPaid('${inv.id}')" class="text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-700 font-medium px-2 py-1 rounded">✅ Paid</button>`
       : '';
     tr.innerHTML = `
+      <td class="px-4 py-3"><input type="checkbox" class="inv-check rounded" value="${inv.id}" data-pdf="${pdfUrl}" data-num="${esc(inv.invoice_number)}" onchange="updateInvDownloadBtn()" /></td>
       <td class="px-4 py-3 font-medium">${esc(inv.invoice_number)}</td>
       <td class="px-4 py-3 text-gray-600">${esc(custName)}</td>
       <td class="px-4 py-3 font-medium">${cs()}${Number(inv.total||0).toFixed(2)}</td>
@@ -1123,39 +1307,54 @@ async function loadInvoices() {
   });
 }
 
-document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const items = collectLineItems('inv');
-  if (!items.length) { showToast('Add at least one line item.', 'error'); return; }
+function toggleAllInvoices(master) {
+  document.querySelectorAll('.inv-check').forEach(cb => cb.checked = master.checked);
+  updateInvDownloadBtn();
+}
 
-  const payload = {
-    customer_id: document.getElementById('invCustomer').value || null,
-    due_date: document.getElementById('invDueDate').value || null,
-    payment_terms: document.getElementById('invTerms').value.trim() || null,
-    notes: document.getElementById('invNotes').value.trim(),
-    line_items: items,
-  };
-
-  const res = await fetch(API + '/invoices', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (res.ok) {
-    showToast('Invoice created!', 'success');
-    document.getElementById('invoiceForm').reset();
-    document.getElementById('invLineItems').innerHTML = '';
-    recalcTotals('inv');
-    loadInvoices();
-  } else {
-    const data = await res.json().catch(() => ({}));
-    showToast(data.detail || 'Failed to create invoice.', 'error');
+function updateInvDownloadBtn() {
+  const count = document.querySelectorAll('.inv-check:checked').length;
+  const btn = document.getElementById('invDownloadSelected');
+  if (btn) {
+    btn.classList.toggle('hidden', count === 0);
+    btn.textContent = `📥 Download Selected (${count})`;
   }
-});
+}
+
+async function downloadSelectedInvoicePDFs() {
+  const checks = document.querySelectorAll('.inv-check:checked');
+  if (!checks.length) { showToast('Select at least one invoice.', 'error'); return; }
+  for (const cb of checks) {
+    const a = document.createElement('a');
+    a.href = cb.dataset.pdf;
+    a.target = '_blank';
+    a.download = `${cb.dataset.num}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    await new Promise(r => setTimeout(r, 300));
+  }
+  showToast(`Downloading ${checks.length} PDF(s)...`, 'success');
+}
+
+async function downloadAllInvoicePDFs() {
+  if (!_allInvoices.length) { showToast('No invoices to download.', 'error'); return; }
+  for (const inv of _allInvoices) {
+    const a = document.createElement('a');
+    a.href = `${API}/invoices/${inv.id}/pdf`;
+    a.target = '_blank';
+    a.download = `${inv.invoice_number}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    await new Promise(r => setTimeout(r, 300));
+  }
+  showToast(`Downloading ${_allInvoices.length} PDF(s)...`, 'success');
+}
 
 // ── Quotes ───────────────────────────────────────
 async function loadQuotes() {
-  const res = await fetch(API + '/quotes');
+  const res = await authFetch(API + '/quotes');
   if (!res.ok) return;
   const quotes = await res.json();
   const tbody = document.getElementById('quotesBody');
@@ -1198,7 +1397,7 @@ document.getElementById('quoteForm').addEventListener('submit', async (e) => {
     line_items: items,
   };
 
-  const res = await fetch(API + '/quotes', {
+  const res = await authFetch(API + '/quotes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -1246,7 +1445,7 @@ function showMarkPaid(invoiceId) {
 async function markInvoicePaid(invoiceId) {
   const method = document.getElementById('markPaidMethod').value;
   try {
-    const res = await fetch(`${API}/invoices/${invoiceId}/mark-paid`, {
+    const res = await authFetch(`${API}/invoices/${invoiceId}/mark-paid`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ payment_method: method }),
@@ -1267,7 +1466,7 @@ async function sendInvWhatsApp(id, btn) {
   if (!confirm('Send this invoice to the customer via WhatsApp?')) return;
   btn.disabled = true; btn.textContent = 'Sending…';
   try {
-    const res = await fetch(`${API}/invoices/${id}/send-whatsapp`, { method: 'POST' });
+    const res = await authFetch(`${API}/invoices/${id}/send-whatsapp`, { method: 'POST' });
     const data = await res.json();
     if (res.ok) { showToast('Invoice sent via WhatsApp!', 'success'); loadInvoices(); }
     else showToast(data.detail || 'Failed to send.', 'error');
@@ -1279,7 +1478,7 @@ async function sendQuoWhatsApp(id, btn) {
   if (!confirm('Send this quote to the customer via WhatsApp?')) return;
   btn.disabled = true; btn.textContent = 'Sending…';
   try {
-    const res = await fetch(`${API}/quotes/${id}/send-whatsapp`, { method: 'POST' });
+    const res = await authFetch(`${API}/quotes/${id}/send-whatsapp`, { method: 'POST' });
     const data = await res.json();
     if (res.ok) { showToast('Quote sent via WhatsApp!', 'success'); loadQuotes(); }
     else showToast(data.detail || 'Failed to send.', 'error');
@@ -1296,7 +1495,7 @@ function formatMonth(key) {
 }
 
 async function loadAccounts() {
-  const res = await fetch(API + '/accounts');
+  const res = await authFetch(API + '/accounts');
   if (!res.ok) return;
   const data = await res.json();
 
@@ -1393,7 +1592,7 @@ function showMarkPaidAcct(invoiceId) {
 async function markInvoicePaidAcct(invoiceId) {
   const method = document.getElementById('markPaidMethod').value;
   try {
-    const res = await fetch(`${API}/invoices/${invoiceId}/mark-paid`, {
+    const res = await authFetch(`${API}/invoices/${invoiceId}/mark-paid`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ payment_method: method }),
@@ -1414,7 +1613,7 @@ async function markInvoicePaidAcct(invoiceId) {
 async function deleteInvoiceAcct(invoiceId) {
   if (!confirm('Delete this invoice? This cannot be undone.')) return;
   try {
-    const res = await fetch(`${API}/invoices/${invoiceId}`, { method: 'DELETE' });
+    const res = await authFetch(`${API}/invoices/${invoiceId}`, { method: 'DELETE' });
     if (res.ok) {
       showToast('Invoice deleted.', 'success');
       loadAccounts();
@@ -1426,17 +1625,382 @@ async function deleteInvoiceAcct(invoiceId) {
   } catch { showToast('Network error.', 'error'); }
 }
 
+// ── Expenses ─────────────────────────────────────
+const CATEGORY_LABELS = {
+  materials: '🧱 Materials', tools: '🔧 Tools', fuel: '⛽ Fuel',
+  food: '🍔 Food', office: '🏢 Office', travel: '🚗 Travel',
+  subcontractor: '👷 Subcontractor', utilities: '💡 Utilities',
+  insurance: '🛡 Insurance', general: '📦 General',
+};
+
+async function loadExpenses() {
+  // Load summary
+  const sRes = await authFetch(API + '/expenses/summary');
+  if (sRes.ok) {
+    const s = await sRes.json();
+    document.getElementById('expTotalSpent').textContent = `${cs()}${s.total.toFixed(2)}`;
+    document.getElementById('expTotalTax').textContent = `${cs()}${s.total_tax.toFixed(2)}`;
+    document.getElementById('expCount').textContent = s.count;
+
+    const now = new Date();
+    const thisKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const thisMonth = s.months.find(m => m.month === thisKey);
+    document.getElementById('expThisMonth').textContent = `${cs()}${(thisMonth ? thisMonth.total : 0).toFixed(2)}`;
+
+    // Category breakdown
+    const catGrid = document.getElementById('expCategoryGrid');
+    catGrid.innerHTML = '';
+    const cats = Object.entries(s.categories || {}).sort((a,b) => b[1] - a[1]);
+    if (!cats.length) {
+      document.getElementById('noExpCategories').classList.remove('hidden');
+    } else {
+      document.getElementById('noExpCategories').classList.add('hidden');
+      cats.forEach(([cat, total]) => {
+        const div = document.createElement('div');
+        div.className = 'bg-gray-50 rounded-lg p-3 text-center';
+        div.innerHTML = `<p class="text-lg font-bold text-gray-700">${cs()}${total.toFixed(2)}</p><p class="text-xs text-gray-500 mt-1">${CATEGORY_LABELS[cat] || cat}</p>`;
+        catGrid.appendChild(div);
+      });
+    }
+
+    // Monthly breakdown
+    const mtbody = document.getElementById('expMonthsBody');
+    mtbody.innerHTML = '';
+    if (!s.months.length) {
+      document.getElementById('noExpMonths').classList.remove('hidden');
+    } else {
+      document.getElementById('noExpMonths').classList.add('hidden');
+      s.months.forEach(m => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+        tr.innerHTML = `
+          <td class="px-4 py-3 font-medium">${formatMonth(m.month)}</td>
+          <td class="px-4 py-3 text-right text-red-600 font-medium">${cs()}${m.total.toFixed(2)}</td>
+          <td class="px-4 py-3 text-right text-orange-600 font-medium">${cs()}${m.tax.toFixed(2)}</td>
+          <td class="px-4 py-3 text-right text-gray-600">${m.count}</td>
+        `;
+        mtbody.appendChild(tr);
+      });
+    }
+  }
+
+  // Load all expenses
+  const res = await authFetch(API + '/expenses');
+  if (!res.ok) return;
+  window._allExpenses = await res.json();
+  const tbody = document.getElementById('expensesBody');
+  tbody.innerHTML = '';
+  if (!window._allExpenses.length) {
+    document.getElementById('noExpenses').classList.remove('hidden');
+  } else {
+    document.getElementById('noExpenses').classList.add('hidden');
+    window._allExpenses.forEach(exp => {
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-gray-50 cursor-pointer';
+      tr.onclick = () => showReceiptDetail(exp);
+      const dateStr = exp.date || '—';
+      tr.innerHTML = `
+        <td class="px-4 py-3 text-gray-600 text-xs">${esc(dateStr)}</td>
+        <td class="px-4 py-3 font-medium">${esc(exp.vendor || '—')}</td>
+        <td class="px-4 py-3"><span class="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">${CATEGORY_LABELS[exp.category] || exp.category}</span></td>
+        <td class="px-4 py-3 text-right font-medium">${cs()}${Number(exp.total||0).toFixed(2)}</td>
+        <td class="px-4 py-3 text-right text-orange-600 text-xs">${cs()}${Number(exp.tax_amount||0).toFixed(2)}</td>
+        <td class="px-4 py-3 space-x-1 whitespace-nowrap" onclick="event.stopPropagation()">
+          <button onclick="showReceiptDetail(window._allExpenses.find(e=>e.id==='${exp.id}'))" class="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 font-medium px-2 py-1 rounded">🧾 View</button>
+          ${exp.receipt_image ? `<a href="${API}/expenses/${exp.id}/receipt-image" target="_blank" class="inline-block text-xs bg-green-100 hover:bg-green-200 text-green-700 font-medium px-2 py-1 rounded">📷 Photo</a>` : ''}
+          <button onclick="deleteExpense('${exp.id}')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-medium px-2 py-1 rounded">🗑 Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+function showReceiptDetail(exp) {
+  const modal = document.getElementById('receiptModal');
+  const body = document.getElementById('receiptModalBody');
+  let receipt = {};
+  try { receipt = JSON.parse(exp.receipt_data || '{}'); } catch {}
+
+  const lineItems = receipt.line_items || [];
+  const itemsHtml = lineItems.length
+    ? `<table class="w-full text-xs mt-2 border"><thead class="bg-gray-50"><tr><th class="px-2 py-1 text-left">Item</th><th class="px-2 py-1 text-right">Qty</th><th class="px-2 py-1 text-right">Amount</th></tr></thead><tbody>${lineItems.map(li => `<tr class="border-t"><td class="px-2 py-1">${esc(li.description || '—')}</td><td class="px-2 py-1 text-right">${li.quantity || 1}</td><td class="px-2 py-1 text-right">${cs()}${Number(li.amount || 0).toFixed(2)}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="text-gray-400 text-xs">No line items extracted</p>';
+
+  const hasImage = exp.receipt_image && exp.receipt_image !== '';
+  const imageBtn = hasImage
+    ? `<a href="${API}/expenses/${exp.id}/receipt-image" target="_blank" class="inline-block text-sm bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg">📷 View Original Receipt</a>`
+    : '<p class="text-xs text-gray-400">📷 No receipt image stored (scanned before image storage was enabled)</p>';
+
+  body.innerHTML = `
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <div><span class="text-gray-500 text-xs block">Vendor</span><span class="font-medium">${esc(exp.vendor || '—')}</span></div>
+      <div><span class="text-gray-500 text-xs block">Date</span><span class="font-medium">${esc(exp.date || '—')}</span></div>
+      <div><span class="text-gray-500 text-xs block">Category</span><span class="font-medium">${CATEGORY_LABELS[exp.category] || exp.category}</span></div>
+      <div><span class="text-gray-500 text-xs block">Currency</span><span class="font-medium">${exp.currency || 'GBP'}</span></div>
+    </div>
+    <div class="bg-gray-50 rounded-lg p-3 mb-3">
+      <p class="text-gray-500 text-xs mb-1">Description</p>
+      <p class="text-sm">${esc(exp.description || receipt.description || '—')}</p>
+    </div>
+    <div class="mb-3">
+      <p class="text-gray-500 text-xs mb-1 font-medium">Line Items</p>
+      ${itemsHtml}
+    </div>
+    <div class="bg-gray-50 rounded-lg p-3 space-y-1 mb-3">
+      <div class="flex justify-between text-sm"><span>Subtotal</span><span>${cs()}${Number(exp.subtotal || receipt.subtotal || 0).toFixed(2)}</span></div>
+      <div class="flex justify-between text-sm"><span>VAT</span><span class="text-orange-600">${cs()}${Number(exp.tax_amount || 0).toFixed(2)}</span></div>
+      <div class="flex justify-between text-sm font-bold border-t pt-1 mt-1"><span>Total</span><span>${cs()}${Number(exp.total || 0).toFixed(2)}</span></div>
+    </div>
+    <div class="pt-2 border-t">${imageBtn}</div>
+  `;
+  modal.classList.remove('hidden');
+}
+
+function exportExpensesCSV() {
+  const expenses = window._allExpenses || [];
+  if (!expenses.length) { showToast('No expenses to export.', 'error'); return; }
+  const headers = ['Date','Vendor','Description','Category','Subtotal','VAT','Total','Currency'];
+  const rows = expenses.map(e => {
+    let desc = e.description || '';
+    try { const r = JSON.parse(e.receipt_data || '{}'); desc = desc || r.description || ''; } catch {}
+    return [e.date, e.vendor, desc, e.category, e.subtotal, e.tax_amount, e.total, e.currency].map(v => `"${String(v||'').replace(/"/g, '""')}"`).join(',');
+  });
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `expenses_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('CSV exported!', 'success');
+}
+
+async function downloadAllReceiptImages() {
+  const expenses = (window._allExpenses || []).filter(e => e.receipt_image);
+  if (!expenses.length) { showToast('No receipt images to download.', 'error'); return; }
+  for (const exp of expenses) {
+    const a = document.createElement('a');
+    a.href = `${API}/expenses/${exp.id}/receipt-image`;
+    a.target = '_blank';
+    a.download = `receipt_${(exp.vendor||'unknown').replace(/\s/g,'_')}_${exp.date||'undated'}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    await new Promise(r => setTimeout(r, 400));
+  }
+  showToast(`Downloading ${expenses.length} receipt(s)...`, 'success');
+}
+
+async function deleteExpense(expenseId) {
+  if (!confirm('Delete this expense? This cannot be undone.')) return;
+  try {
+    const res = await authFetch(`${API}/expenses/${expenseId}`, { method: 'DELETE' });
+    if (res.ok) {
+      showToast('Expense deleted.', 'success');
+      loadExpenses();
+    } else {
+      showToast('Failed to delete expense.', 'error');
+    }
+  } catch { showToast('Network error.', 'error'); }
+}
+
+// ── Bookings ─────────────────────────────────────
+let _calYear, _calMonth;
+let _allBookings = [];
+
+function initCalendar() {
+  const now = new Date();
+  _calYear = now.getFullYear();
+  _calMonth = now.getMonth();
+}
+initCalendar();
+
+function changeMonth(delta) {
+  _calMonth += delta;
+  if (_calMonth > 11) { _calMonth = 0; _calYear++; }
+  if (_calMonth < 0) { _calMonth = 11; _calYear--; }
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('calMonthLabel').textContent = `${MONTHS[_calMonth]} ${_calYear}`;
+
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+
+  const first = new Date(_calYear, _calMonth, 1);
+  const lastDay = new Date(_calYear, _calMonth + 1, 0).getDate();
+  let startDow = first.getDay(); // 0=Sun
+  startDow = startDow === 0 ? 6 : startDow - 1; // convert to Mon=0
+
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+
+  // Build lookup: date -> bookings
+  const byDate = {};
+  _allBookings.forEach(b => {
+    if (!byDate[b.date]) byDate[b.date] = [];
+    byDate[b.date].push(b);
+  });
+
+  // Empty cells before month starts
+  for (let i = 0; i < startDow; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'border-r border-b border-gray-100 p-1 min-h-[60px] bg-gray-50';
+    grid.appendChild(cell);
+  }
+
+  for (let d = 1; d <= lastDay; d++) {
+    const dateStr = `${_calYear}-${String(_calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const cell = document.createElement('div');
+    const isToday = dateStr === todayStr;
+    cell.className = `border-r border-b border-gray-100 p-1 min-h-[60px] ${isToday ? 'bg-blue-50' : 'hover:bg-gray-50'}`;
+
+    const dayNum = document.createElement('div');
+    dayNum.className = `text-xs font-medium ${isToday ? 'text-blue-700 font-bold' : 'text-gray-500'}`;
+    dayNum.textContent = d;
+    cell.appendChild(dayNum);
+
+    const dayBookings = byDate[dateStr] || [];
+    dayBookings.slice(0, 3).forEach(b => {
+      const chip = document.createElement('div');
+      const statusColor = b.status === 'completed' ? 'bg-gray-200 text-gray-600' :
+                          b.status === 'cancelled' ? 'bg-red-100 text-red-600' :
+                          'bg-green-100 text-green-700';
+      chip.className = `text-[10px] leading-tight rounded px-1 py-0.5 mt-0.5 truncate ${statusColor}`;
+      chip.textContent = `${b.time || ''} ${b.title || ''}`.trim();
+      chip.title = `${b.title} — ${b.time} (${b.duration_mins}m)${b.customer_name ? ' — ' + b.customer_name : ''}`;
+      cell.appendChild(chip);
+    });
+    if (dayBookings.length > 3) {
+      const more = document.createElement('div');
+      more.className = 'text-[10px] text-gray-400 mt-0.5';
+      more.textContent = `+${dayBookings.length - 3} more`;
+      cell.appendChild(more);
+    }
+
+    grid.appendChild(cell);
+  }
+
+  // Fill remaining cells
+  const totalCells = startDow + lastDay;
+  const remainder = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+  for (let i = 0; i < remainder; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'border-r border-b border-gray-100 p-1 min-h-[60px] bg-gray-50';
+    grid.appendChild(cell);
+  }
+}
+
+const STATUS_LABELS = {
+  confirmed: '✅ Confirmed',
+  completed: '☑️ Completed',
+  cancelled: '❌ Cancelled',
+};
+
+async function loadBookings() {
+  const res = await authFetch(API + '/bookings');
+  if (!res.ok) return;
+  _allBookings = await res.json();
+
+  // Summary stats
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const upcoming = _allBookings.filter(b => b.date >= todayStr && b.status !== 'cancelled' && b.status !== 'completed');
+  const todayBks = _allBookings.filter(b => b.date === todayStr && b.status !== 'cancelled');
+  const completed = _allBookings.filter(b => b.status === 'completed');
+
+  document.getElementById('bkTotal').textContent = _allBookings.length;
+  document.getElementById('bkUpcoming').textContent = upcoming.length;
+  document.getElementById('bkToday').textContent = todayBks.length;
+  document.getElementById('bkCompleted').textContent = completed.length;
+
+  // Render calendar
+  renderCalendar();
+
+  // Render table
+  const tbody = document.getElementById('bookingsBody');
+  tbody.innerHTML = '';
+  if (!_allBookings.length) {
+    document.getElementById('noBookings').classList.remove('hidden');
+  } else {
+    document.getElementById('noBookings').classList.add('hidden');
+
+    // Sort by date desc for the table
+    const sorted = [..._allBookings].sort((a, b) => {
+      if (a.date === b.date) return (a.time || '').localeCompare(b.time || '');
+      return b.date.localeCompare(a.date);
+    });
+
+    sorted.forEach(bk => {
+      const tr = document.createElement('tr');
+      const isPast = bk.date < todayStr;
+      tr.className = `hover:bg-gray-50 ${isPast && bk.status === 'confirmed' ? 'opacity-60' : ''}`;
+      const friendlyDate = bk.date ? new Date(bk.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : '—';
+      const statusBadge = bk.status === 'completed' ? 'bg-gray-100 text-gray-700' :
+                          bk.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                          'bg-green-100 text-green-700';
+      const canComplete = bk.status === 'confirmed';
+      const canCancel = bk.status === 'confirmed';
+      tr.innerHTML = `
+        <td class="px-4 py-3 text-gray-600 text-xs font-medium">${esc(friendlyDate)}</td>
+        <td class="px-4 py-3 font-medium">${esc(bk.time || '—')}</td>
+        <td class="px-4 py-3">${esc(bk.title || '—')}</td>
+        <td class="px-4 py-3 text-gray-600 text-xs">${esc(bk.customer_name || '—')}</td>
+        <td class="px-4 py-3 text-gray-500 text-xs">${bk.duration_mins}m</td>
+        <td class="px-4 py-3"><span class="text-xs px-2 py-0.5 rounded ${statusBadge}">${bk.status}</span></td>
+        <td class="px-4 py-3 space-x-1 whitespace-nowrap">
+          ${canComplete ? `<button onclick="updateBookingStatus('${bk.id}','completed')" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-2 py-1 rounded">☑️ Done</button>` : ''}
+          ${canCancel ? `<button onclick="updateBookingStatus('${bk.id}','cancelled')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-medium px-2 py-1 rounded">✕ Cancel</button>` : ''}
+          <button onclick="deleteBooking('${bk.id}')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-medium px-2 py-1 rounded">🗑</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+async function updateBookingStatus(bookingId, status) {
+  try {
+    const res = await authFetch(`${API}/bookings/${bookingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (res.ok) {
+      showToast(`Booking ${status}.`, 'success');
+      loadBookings();
+    } else {
+      showToast('Failed to update booking.', 'error');
+    }
+  } catch { showToast('Network error.', 'error'); }
+}
+
+async function deleteBooking(bookingId) {
+  if (!confirm('Delete this booking? This cannot be undone.')) return;
+  try {
+    const res = await authFetch(`${API}/bookings/${bookingId}`, { method: 'DELETE' });
+    if (res.ok) {
+      showToast('Booking deleted.', 'success');
+      loadBookings();
+    } else {
+      showToast('Failed to delete booking.', 'error');
+    }
+  } catch { showToast('Network error.', 'error'); }
+}
+
 // ── Init ─────────────────────────────────────────
 loadBusiness();
 loadStats();
 loadCustomers();
 loadMessages();
 loadDrafts();
-loadOptedInCount();
-loadCampaigns();
 loadCustomerDropdowns();
 loadInvoices();
 loadQuotes();
+loadExpenses();
+loadBookings();
 loadAccounts();
 </script>
 </body>

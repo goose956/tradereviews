@@ -145,6 +145,19 @@ async def verify_code(body: VerifyCode) -> dict:
 
     db = get_supabase()
 
+    # Rate-limit: block after 5 failed attempts in the last 5 minutes
+    five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    recent_unused = (
+        db.table("auth_codes")
+        .select("id", count="exact")
+        .eq("phone", phone)
+        .eq("used", 0)
+        .gte("created_at", five_min_ago)
+        .execute()
+    )
+    if recent_unused.count and recent_unused.count >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please wait a few minutes.")
+
     # Find the latest unused code for this phone
     codes = (
         db.table("auth_codes")

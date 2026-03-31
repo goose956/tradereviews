@@ -1,24 +1,25 @@
 """Member portal API — lets business owners manage their account."""
 
-import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from app.api.auth import get_current_business
 from app.db.supabase import get_supabase
 from app.services.whatsapp import send_text_message, upload_media, send_document_message
 from app.services.message_log import log_message
 from app.services.pdf_generator import generate_invoice_pdf, generate_quote_pdf
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/member", tags=["member"])
+router = APIRouter(
+    prefix="/member", tags=["member"],
+    dependencies=[Depends(get_current_business)],
+)
 
-# ── Rate-limit constants ─────────────────────────
-MAX_CAMPAIGN_SENDS_PER_DAY = 50        # per business
-DELAY_BETWEEN_SENDS_SECS   = 2         # stagger to avoid Meta throttling
-
+# Public router for PDF downloads (no auth required — customers tap these links)
+public_router = APIRouter(prefix="/member", tags=["member-public"])
 
 # ── Models ───────────────────────────────────────────
 
@@ -29,12 +30,7 @@ class BusinessUpdate(BaseModel):
     phone_number: str | None = None
     email: str | None = None
     google_review_link: str | None = None
-    follow_up_enabled: bool | None = None
-    follow_up_days: int | None = None
-    max_follow_ups: int | None = None
-    follow_up_message: str | None = None
-    follow_up_message_2: str | None = None
-    follow_up_message_3: str | None = None
+    google_place_id: str | None = None
     auto_reply_enabled: bool | None = None
     auto_reply_threshold: int | None = None
     auto_reply_positive_msg: str | None = None
@@ -53,6 +49,10 @@ class BusinessUpdate(BaseModel):
     payment_link: str | None = None
     currency: str | None = None
     confirm_before_send: bool | None = None
+    followup_enabled: bool | None = None
+    followup_interval_days: int | None = None
+    followup_max_count: int | None = None
+    followup_message: str | None = None
 
 
 class LineItemIn(BaseModel):
@@ -106,7 +106,16 @@ async def get_business(business_id: str) -> dict:
     result = db.table("businesses").select("*").eq("id", business_id).single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Business not found")
-    return result.data
+    data = result.data
+    # Replace sensitive token with a boolean flag
+    data["google_connected"] = bool(
+        data.get("google_refresh_token")
+        and data.get("google_account_id")
+        and data.get("google_location_id")
+    )
+    data.pop("google_refresh_token", None)
+    data.pop("oauth_state", None)
+    return data
 
 
 @router.patch("/business/{business_id}")
@@ -153,6 +162,124 @@ async def list_drafts(business_id: str) -> list[dict]:
         .execute()
     )
     return result.data or []
+
+
+@router.post("/business/{business_id}/drafts/{draft_id}/approve")
+async def approve_draft(business_id: str, draft_id: str) -> dict:
+    """Approve the AI draft and post it to Google as the owner reply."""
+    from app.services.google import refresh_access_token, post_review_reply
+    from app.core.security import decrypt
+
+    db = get_supabase()
+    draft = (
+        db.table("review_drafts")
+        .select("*")
+        .eq("id", draft_id)
+        .eq("business_id", business_id)
+        .single()
+        .execute()
+    )
+    if not draft.data:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    d = draft.data
+
+    biz = (
+        db.table("businesses").select("*").eq("id", business_id).single().execute()
+    )
+    if not biz.data or not biz.data.get("google_refresh_token"):
+        raise HTTPException(status_code=400, detail="Google not connected")
+    b = biz.data
+
+    try:
+        refresh_token = decrypt(b["google_refresh_token"])
+        access_token = await refresh_access_token(refresh_token)
+        review_name = f"accounts/{b['google_account_id']}/locations/{b['google_location_id']}/reviews/{d['google_review_id']}"
+        await post_review_reply(access_token, review_name, d["ai_draft_reply"])
+    except Exception as e:
+        logger.exception("Failed to post approved reply for draft %s", draft_id)
+        raise HTTPException(status_code=502, detail=f"Failed to post to Google: {e}")
+
+    from datetime import datetime, timezone
+    db.table("review_drafts").update({
+        "status": "posted",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", draft_id).execute()
+
+    return {"posted": True, "reply": d["ai_draft_reply"]}
+
+
+@router.post("/business/{business_id}/drafts/{draft_id}/reply")
+async def post_custom_reply(business_id: str, draft_id: str, request: Request) -> dict:
+    """Post a custom owner reply (edited by the business owner) to Google."""
+    from app.services.google import refresh_access_token, post_review_reply
+    from app.core.security import decrypt
+
+    body = await request.json()
+    reply_text = body.get("reply_text", "").strip()
+    if not reply_text:
+        raise HTTPException(status_code=400, detail="reply_text is required")
+
+    db = get_supabase()
+    draft = (
+        db.table("review_drafts")
+        .select("*")
+        .eq("id", draft_id)
+        .eq("business_id", business_id)
+        .single()
+        .execute()
+    )
+    if not draft.data:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    d = draft.data
+
+    biz = (
+        db.table("businesses").select("*").eq("id", business_id).single().execute()
+    )
+    if not biz.data or not biz.data.get("google_refresh_token"):
+        raise HTTPException(status_code=400, detail="Google not connected")
+    b = biz.data
+
+    try:
+        refresh_token = decrypt(b["google_refresh_token"])
+        access_token = await refresh_access_token(refresh_token)
+        review_name = f"accounts/{b['google_account_id']}/locations/{b['google_location_id']}/reviews/{d['google_review_id']}"
+        await post_review_reply(access_token, review_name, reply_text)
+    except Exception as e:
+        logger.exception("Failed to post custom reply for draft %s", draft_id)
+        raise HTTPException(status_code=502, detail=f"Failed to post to Google: {e}")
+
+    from datetime import datetime, timezone
+    db.table("review_drafts").update({
+        "status": "posted",
+        "ai_draft_reply": reply_text,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", draft_id).execute()
+
+    return {"posted": True, "reply": reply_text}
+
+
+@router.post("/business/{business_id}/drafts/{draft_id}/reject")
+async def reject_draft(business_id: str, draft_id: str) -> dict:
+    """Reject a review draft — no reply will be posted."""
+    from datetime import datetime, timezone
+    db = get_supabase()
+    result = (
+        db.table("review_drafts")
+        .select("id")
+        .eq("id", draft_id)
+        .eq("business_id", business_id)
+        .single()
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    db.table("review_drafts").update({
+        "status": "rejected",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", draft_id).execute()
+
+    return {"rejected": True}
 
 
 # ── Stats ────────────────────────────────────────────
@@ -209,139 +336,7 @@ async def list_messages(business_id: str) -> list[dict]:
     return result.data or []
 
 
-# ── Campaigns ────────────────────────────────────────
 
-class CampaignCreate(BaseModel):
-    message_body: str
-
-
-@router.get("/business/{business_id}/campaigns")
-async def list_campaigns(business_id: str) -> list[dict]:
-    """List all campaigns for this business, newest first."""
-    db = get_supabase()
-    result = (
-        db.table("campaigns")
-        .select("*")
-        .eq("business_id", business_id)
-        .order("created_at", desc=True)
-        .execute()
-    )
-    return result.data or []
-
-
-@router.get("/business/{business_id}/opted-in-count")
-async def opted_in_count(business_id: str) -> dict:
-    """Return the number of marketing-opted-in customers."""
-    db = get_supabase()
-    result = (
-        db.table("customers")
-        .select("*", count="exact")
-        .eq("business_id", business_id)
-        .eq("marketing_opt_in", 1)
-        .execute()
-    )
-    return {"opted_in": result.count or 0}
-
-
-@router.post("/business/{business_id}/campaigns")
-async def create_campaign(
-    business_id: str, body: CampaignCreate, request: Request
-) -> dict:
-    """Create a campaign and send it to all opted-in customers (throttled)."""
-    db = get_supabase()
-    client = request.app.state.http_client
-    message = body.message_body.strip()
-
-    if not message:
-        raise HTTPException(status_code=400, detail="Message body is required")
-    if len(message) > 1000:
-        raise HTTPException(status_code=400, detail="Message too long (max 1000 chars)")
-
-    # Check daily send limit
-    from datetime import datetime, timezone
-    today_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00")
-    today_campaigns = (
-        db.table("campaigns")
-        .select("sent_count")
-        .eq("business_id", business_id)
-        .gte("created_at", today_start)
-        .execute()
-    )
-    sent_today = sum(c.get("sent_count", 0) for c in (today_campaigns.data or []))
-    remaining = MAX_CAMPAIGN_SENDS_PER_DAY - sent_today
-    if remaining <= 0:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Daily send limit reached ({MAX_CAMPAIGN_SENDS_PER_DAY}/day). Try again tomorrow.",
-        )
-
-    # Fetch opted-in customers
-    opted_in = (
-        db.table("customers")
-        .select("id, name, phone_number")
-        .eq("business_id", business_id)
-        .eq("marketing_opt_in", 1)
-        .execute()
-    )
-    recipients = opted_in.data or []
-    if not recipients:
-        raise HTTPException(
-            status_code=400,
-            detail="No customers have opted in to marketing messages yet.",
-        )
-
-    # Cap to daily remaining
-    recipients = recipients[:remaining]
-
-    # Create campaign record
-    campaign_result = (
-        db.table("campaigns")
-        .insert({
-            "business_id": business_id,
-            "message_body": message,
-            "total_recipients": len(recipients),
-            "status": "sending",
-        })
-        .execute()
-    )
-    campaign = campaign_result.data[0]
-    campaign_id = campaign["id"]
-
-    # Send messages with throttling
-    sent = 0
-    failed = 0
-    for i, cust in enumerate(recipients):
-        try:
-            await send_text_message(client, cust["phone_number"], message)
-            log_message(
-                business_id=business_id,
-                to_phone=cust["phone_number"],
-                message_body=message,
-                message_type="campaign",
-            )
-            sent += 1
-        except Exception:
-            logger.exception("Campaign send failed for %s", cust["phone_number"])
-            failed += 1
-
-        # Stagger sends to avoid rate limiting
-        if i < len(recipients) - 1:
-            await asyncio.sleep(DELAY_BETWEEN_SENDS_SECS)
-
-    # Update campaign record
-    final_status = "completed" if failed == 0 else ("failed" if sent == 0 else "partial")
-    db.table("campaigns").update({
-        "sent_count": sent,
-        "failed_count": failed,
-        "status": final_status,
-    }).eq("id", campaign_id).execute()
-
-    return {
-        "campaign_id": campaign_id,
-        "sent": sent,
-        "failed": failed,
-        "status": final_status,
-    }
 
 
 # ── Helper: recalculate totals & persist line items ──
@@ -730,7 +725,7 @@ def _fetch_pdf_context(db, business_id: str, record_id: str, table: str, item_ty
 
 # ── Invoice PDF endpoints ────────────────────────────
 
-@router.get("/business/{business_id}/invoices/{invoice_id}/pdf")
+@public_router.get("/business/{business_id}/invoices/{invoice_id}/pdf")
 async def download_invoice_pdf(business_id: str, invoice_id: str) -> Response:
     """Download the invoice as a PDF."""
     db = get_supabase()
@@ -794,7 +789,7 @@ async def send_invoice_whatsapp(business_id: str, invoice_id: str, request: Requ
 
 # ── Quote PDF endpoints ──────────────────────────────
 
-@router.get("/business/{business_id}/quotes/{quote_id}/pdf")
+@public_router.get("/business/{business_id}/quotes/{quote_id}/pdf")
 async def download_quote_pdf(business_id: str, quote_id: str) -> Response:
     """Download the quote as a PDF."""
     db = get_supabase()
@@ -836,3 +831,189 @@ async def send_quote_whatsapp(business_id: str, quote_id: str, request: Request)
     db.table("quotes").update({"status": "sent"}).eq("id", quote_id).execute()
 
     return {"sent": True, "filename": filename}
+
+
+# ── Expense endpoints ────────────────────────────────
+
+@router.get("/business/{business_id}/expenses")
+async def list_expenses(business_id: str) -> list[dict]:
+    """List all expenses for a business, newest first."""
+    db = get_supabase()
+    result = (
+        db.table("expenses")
+        .select("*")
+        .eq("business_id", business_id)
+        .order("date", desc=True)
+        .execute()
+    )
+    expenses = result.data or []
+    # Replace heavy receipt_image blob with a boolean flag for the list view
+    for e in expenses:
+        e["receipt_image"] = bool(e.get("receipt_image"))
+    return expenses
+
+
+@router.get("/business/{business_id}/expenses/summary")
+async def expenses_summary(business_id: str) -> dict:
+    """Return expense totals and monthly breakdown."""
+    db = get_supabase()
+    expenses = (
+        db.table("expenses")
+        .select("*")
+        .eq("business_id", business_id)
+        .order("date", desc=True)
+        .execute()
+    ).data or []
+
+    total = sum(e.get("total", 0) for e in expenses)
+    total_tax = sum(e.get("tax_amount", 0) for e in expenses)
+
+    # Group by month
+    months: dict[str, dict] = {}
+    for e in expenses:
+        d = e.get("date", "")[:7] or "unknown"
+        if d not in months:
+            months[d] = {"month": d, "total": 0, "tax": 0, "count": 0}
+        months[d]["total"] += e.get("total", 0)
+        months[d]["tax"] += e.get("tax_amount", 0)
+        months[d]["count"] += 1
+
+    # Group by category
+    categories: dict[str, float] = {}
+    for e in expenses:
+        cat = e.get("category", "general")
+        categories[cat] = categories.get(cat, 0) + e.get("total", 0)
+
+    month_list = sorted(months.values(), key=lambda m: m["month"], reverse=True)
+
+    return {
+        "total": round(total, 2),
+        "total_tax": round(total_tax, 2),
+        "count": len(expenses),
+        "months": month_list,
+        "categories": categories,
+    }
+
+
+@router.get("/business/{business_id}/expenses/{expense_id}")
+async def get_expense(business_id: str, expense_id: str) -> dict:
+    """Get a single expense."""
+    db = get_supabase()
+    result = (
+        db.table("expenses")
+        .select("*")
+        .eq("id", expense_id)
+        .eq("business_id", business_id)
+        .single()
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    return result.data
+
+
+@router.patch("/business/{business_id}/expenses/{expense_id}")
+async def update_expense(business_id: str, expense_id: str, request: Request) -> dict:
+    """Update an expense (vendor, description, category, total, etc.)."""
+    db = get_supabase()
+    body = await request.json()
+    allowed = {"vendor", "description", "category", "date", "subtotal", "tax_amount", "total", "currency"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    db.table("expenses").update(updates).eq("id", expense_id).eq("business_id", business_id).execute()
+    return {"updated": True}
+
+
+@router.delete("/business/{business_id}/expenses/{expense_id}")
+async def delete_expense(business_id: str, expense_id: str) -> dict:
+    """Delete an expense."""
+    db = get_supabase()
+    db.table("expenses").delete().eq("id", expense_id).eq("business_id", business_id).execute()
+    return {"deleted": True}
+
+
+@router.get("/business/{business_id}/expenses/{expense_id}/receipt-image")
+async def get_receipt_image(business_id: str, expense_id: str):
+    """Return the stored receipt image as a downloadable file."""
+    import base64
+    db = get_supabase()
+    result = (
+        db.table("expenses")
+        .select("receipt_image,vendor,date")
+        .eq("id", expense_id)
+        .eq("business_id", business_id)
+        .single()
+        .execute()
+    )
+    if not result.data or not result.data.get("receipt_image"):
+        raise HTTPException(status_code=404, detail="Receipt image not found")
+    data_url = result.data["receipt_image"]
+    # Parse data URL: data:<mime>;base64,<data>
+    header, b64data = data_url.split(",", 1)
+    mime = header.split(":")[1].split(";")[0] if ":" in header else "image/jpeg"
+    ext = mime.split("/")[-1].replace("jpeg", "jpg")
+    image_bytes = base64.b64decode(b64data)
+    vendor = result.data.get("vendor", "receipt").replace(" ", "_")[:30]
+    date = result.data.get("date", "")
+    filename = f"receipt_{vendor}_{date}.{ext}"
+    return Response(
+        content=image_bytes,
+        media_type=mime,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+# ── Booking endpoints ────────────────────────────────
+
+@router.get("/business/{business_id}/bookings")
+async def list_bookings(business_id: str) -> list[dict]:
+    """List all bookings for a business, soonest first."""
+    db = get_supabase()
+    result = (
+        db.table("bookings")
+        .select("*")
+        .eq("business_id", business_id)
+        .order("date")
+        .execute()
+    )
+    return result.data or []
+
+
+@router.get("/business/{business_id}/bookings/{booking_id}")
+async def get_booking(business_id: str, booking_id: str) -> dict:
+    """Get a single booking."""
+    db = get_supabase()
+    result = (
+        db.table("bookings")
+        .select("*")
+        .eq("id", booking_id)
+        .eq("business_id", business_id)
+        .single()
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return result.data
+
+
+@router.patch("/business/{business_id}/bookings/{booking_id}")
+async def update_booking(business_id: str, booking_id: str, request: Request) -> dict:
+    """Update a booking (title, date, time, duration, notes, status)."""
+    db = get_supabase()
+    body = await request.json()
+    allowed = {"title", "date", "time", "duration_mins", "notes", "status",
+               "customer_name", "customer_phone"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    db.table("bookings").update(updates).eq("id", booking_id).eq("business_id", business_id).execute()
+    return {"updated": True}
+
+
+@router.delete("/business/{business_id}/bookings/{booking_id}")
+async def delete_booking(business_id: str, booking_id: str) -> dict:
+    """Delete a booking."""
+    db = get_supabase()
+    db.table("bookings").delete().eq("id", booking_id).eq("business_id", business_id).execute()
+    return {"deleted": True}

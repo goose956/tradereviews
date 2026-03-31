@@ -32,12 +32,6 @@ CREATE TABLE IF NOT EXISTS businesses (
     google_account_id    TEXT,
     google_location_id   TEXT,
     subscription_status  TEXT NOT NULL DEFAULT 'active',
-    follow_up_enabled    INTEGER NOT NULL DEFAULT 1,
-    follow_up_days       INTEGER NOT NULL DEFAULT 3,
-    max_follow_ups       INTEGER NOT NULL DEFAULT 2,
-    follow_up_message    TEXT NOT NULL DEFAULT 'Hi {first_name}, just a friendly reminder from {business_name} — we''d really appreciate your feedback! It only takes 30 seconds. 😊',
-    follow_up_message_2  TEXT NOT NULL DEFAULT 'Hi {first_name}, we don''t want to be a pest! But if you have a spare moment, {business_name} would love to hear how we did. Thank you! 🙏',
-    follow_up_message_3  TEXT NOT NULL DEFAULT 'Hi {first_name}, last reminder from {business_name} — your feedback really helps us improve. We''d be grateful if you could share your experience. Thanks! ⭐',
     auto_reply_enabled   INTEGER NOT NULL DEFAULT 1,
     auto_reply_threshold INTEGER NOT NULL DEFAULT 4,
     auto_reply_positive_msg TEXT NOT NULL DEFAULT 'Thank you so much for your kind review, {reviewer_name}! We really appreciate your support and are glad you had a great experience with {business_name}.',
@@ -56,6 +50,10 @@ CREATE TABLE IF NOT EXISTS businesses (
     payment_link         TEXT NOT NULL DEFAULT '',
     currency             TEXT NOT NULL DEFAULT 'GBP',
     confirm_before_send  INTEGER NOT NULL DEFAULT 0,
+    followup_enabled     INTEGER NOT NULL DEFAULT 1,
+    followup_interval_days INTEGER NOT NULL DEFAULT 3,
+    followup_max_count   INTEGER NOT NULL DEFAULT 2,
+    followup_message     TEXT NOT NULL DEFAULT 'Hi {first_name}, just a quick reminder — we''d really appreciate your feedback! It only takes a minute. Thank you 😊',
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL
 );
@@ -65,28 +63,17 @@ CREATE TABLE IF NOT EXISTS customers (
     business_id         TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
     name                TEXT NOT NULL,
     phone_number        TEXT NOT NULL,
+    email               TEXT NOT NULL DEFAULT '',
     review_requested_at TEXT,
     review_link_sent    INTEGER NOT NULL DEFAULT 0,
     status              TEXT NOT NULL DEFAULT 'request_sent',
-    follow_up_count     INTEGER NOT NULL DEFAULT 0,
-    last_follow_up_at   TEXT,
-    marketing_opt_in    INTEGER NOT NULL DEFAULT 0,
+    followup_count      INTEGER NOT NULL DEFAULT 0,
+    last_followup_at    TEXT,
     created_at          TEXT NOT NULL
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_biz_phone
     ON customers (business_id, phone_number);
-
-CREATE TABLE IF NOT EXISTS campaigns (
-    id               TEXT PRIMARY KEY,
-    business_id      TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-    message_body     TEXT NOT NULL,
-    total_recipients INTEGER NOT NULL DEFAULT 0,
-    sent_count       INTEGER NOT NULL DEFAULT 0,
-    failed_count     INTEGER NOT NULL DEFAULT 0,
-    status           TEXT NOT NULL DEFAULT 'pending',
-    created_at       TEXT NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS admin_campaigns (
     id               TEXT PRIMARY KEY,
@@ -176,6 +163,39 @@ CREATE TABLE IF NOT EXISTS line_items (
     created_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS expenses (
+    id              TEXT PRIMARY KEY,
+    business_id     TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    vendor          TEXT NOT NULL DEFAULT '',
+    description     TEXT NOT NULL DEFAULT '',
+    category        TEXT NOT NULL DEFAULT 'general',
+    date            TEXT NOT NULL DEFAULT '',
+    subtotal        REAL NOT NULL DEFAULT 0,
+    tax_amount      REAL NOT NULL DEFAULT 0,
+    total           REAL NOT NULL DEFAULT 0,
+    currency        TEXT NOT NULL DEFAULT 'GBP',
+    receipt_data    TEXT NOT NULL DEFAULT '',
+    receipt_image   TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bookings (
+    id              TEXT PRIMARY KEY,
+    business_id     TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    customer_id     TEXT REFERENCES customers(id) ON DELETE SET NULL,
+    customer_name   TEXT NOT NULL DEFAULT '',
+    customer_phone  TEXT NOT NULL DEFAULT '',
+    title           TEXT NOT NULL DEFAULT '',
+    date            TEXT NOT NULL DEFAULT '',
+    time            TEXT NOT NULL DEFAULT '',
+    duration_mins   INTEGER NOT NULL DEFAULT 60,
+    notes           TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'confirmed',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS auth_codes (
     id          TEXT PRIMARY KEY,
     phone       TEXT NOT NULL,
@@ -201,7 +221,46 @@ def _get_conn() -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA_SQL)
+    # ── Migrations for existing databases ──
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns that may be missing in older databases."""
+    cur = conn.execute("PRAGMA table_info(customers)")
+    cols = {row[1] for row in cur.fetchall()}
+    if "email" not in cols:
+        conn.execute("ALTER TABLE customers ADD COLUMN email TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+    biz_cur = conn.execute("PRAGMA table_info(businesses)")
+    biz_cols = {row[1] for row in biz_cur.fetchall()}
+    if "oauth_state" not in biz_cols:
+        conn.execute("ALTER TABLE businesses ADD COLUMN oauth_state TEXT")
+        conn.commit()
+
+    exp_cur = conn.execute("PRAGMA table_info(expenses)")
+    exp_cols = {row[1] for row in exp_cur.fetchall()}
+    if "receipt_image" not in exp_cols:
+        conn.execute("ALTER TABLE expenses ADD COLUMN receipt_image TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+    # Follow-up columns on customers
+    cust_cur = conn.execute("PRAGMA table_info(customers)")
+    cust_cols = {row[1] for row in cust_cur.fetchall()}
+    if "followup_count" not in cust_cols:
+        conn.execute("ALTER TABLE customers ADD COLUMN followup_count INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE customers ADD COLUMN last_followup_at TEXT")
+        conn.commit()
+
+    # Follow-up settings on businesses
+    if "followup_enabled" not in biz_cols:
+        conn.execute("ALTER TABLE businesses ADD COLUMN followup_enabled INTEGER NOT NULL DEFAULT 1")
+        conn.execute("ALTER TABLE businesses ADD COLUMN followup_interval_days INTEGER NOT NULL DEFAULT 3")
+        conn.execute("ALTER TABLE businesses ADD COLUMN followup_max_count INTEGER NOT NULL DEFAULT 2")
+        conn.execute("ALTER TABLE businesses ADD COLUMN followup_message TEXT NOT NULL DEFAULT 'Hi {first_name}, just a quick reminder — we''d really appreciate your feedback! It only takes a minute. Thank you 😊'")
+        conn.commit()
 
 
 @lru_cache
@@ -483,7 +542,7 @@ class _QueryBuilder:
                 p[k] = now
 
         conflict_cols = self._on_conflict or "id"
-        update_cols = [k for k in p if k not in conflict_cols.split(",")]
+        update_cols = [k for k in p if k not in conflict_cols.split(",") and k != "id"]
         update_set = ", ".join(f"{k} = excluded.{k}" for k in update_cols)
 
         cols = ", ".join(p.keys())

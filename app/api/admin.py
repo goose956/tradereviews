@@ -1,12 +1,14 @@
 """Admin API — CRUD for businesses, customers, and review drafts."""
 
 import asyncio
+import hmac
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Header, Depends
 from pydantic import BaseModel
 
+from app.core.config import get_settings
 from app.db.supabase import get_supabase
 from app.services.whatsapp import send_text_message
 from app.services.message_log import log_message
@@ -15,7 +17,19 @@ MAX_CAMPAIGN_SENDS_PER_DAY = 50
 DELAY_BETWEEN_SENDS_SECS = 2
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+async def _require_admin(x_admin_key: str = Header(default="")) -> None:
+    """Validate the admin secret header."""
+    secret = get_settings().admin_secret
+    if not secret or not hmac.compare_digest(x_admin_key, secret):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+router = APIRouter(
+    prefix="/admin", tags=["admin"],
+    dependencies=[Depends(_require_admin)],
+)
 
 
 # ── Pydantic models ──────────────────────────────────────────

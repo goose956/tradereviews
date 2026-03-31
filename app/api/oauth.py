@@ -1,6 +1,7 @@
 """Google OAuth 2.0 flow for onboarding businesses."""
 
 import logging
+import secrets
 from typing import Any
 from urllib.parse import urlencode
 
@@ -34,6 +35,15 @@ async def google_login(business_id: str = Query(..., description="UUID of the bu
     if not result.data:
         raise HTTPException(status_code=404, detail="Business not found")
 
+    # Generate a CSRF token and persist it alongside the business_id.
+    csrf_token = secrets.token_urlsafe(32)
+    supabase.table("businesses").update(
+        {"oauth_state": csrf_token}
+    ).eq("id", business_id).execute()
+
+    # Encode both business_id and CSRF token in the state parameter.
+    state_value = f"{business_id}:{csrf_token}"
+
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": settings.google_redirect_uri,
@@ -41,7 +51,7 @@ async def google_login(business_id: str = Query(..., description="UUID of the bu
         "scope": "https://www.googleapis.com/auth/business.manage",
         "access_type": "offline",
         "prompt": "consent",
-        "state": business_id,
+        "state": state_value,
     }
     url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
     return RedirectResponse(url=url)
@@ -62,7 +72,23 @@ async def google_callback(
         logger.warning("OAuth error from Google: %s", error)
         raise HTTPException(status_code=400, detail=f"Google OAuth error: {error}")
 
-    business_id = state
+    # Parse and validate the CSRF state token.
+    if ":" not in state:
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+    business_id, csrf_token = state.split(":", 1)
+
+    supabase = get_supabase()
+    row = supabase.table("businesses").select("oauth_state").eq("id", business_id).execute()
+    if not row.data or not row.data[0].get("oauth_state"):
+        raise HTTPException(status_code=400, detail="OAuth state expired or invalid")
+
+    stored_token = row.data[0]["oauth_state"]
+    if not secrets.compare_digest(stored_token, csrf_token):
+        raise HTTPException(status_code=400, detail="OAuth state mismatch")
+
+    # Clear the used state token immediately.
+    supabase.table("businesses").update({"oauth_state": None}).eq("id", business_id).execute()
+
     settings = get_settings()
     http_client: httpx.AsyncClient = request.app.state.http_client
 

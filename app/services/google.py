@@ -11,6 +11,46 @@ logger = logging.getLogger(__name__)
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GBP_API_BASE = "https://mybusiness.googleapis.com/v4"
+PLACES_API_BASE = "https://places.googleapis.com/v1"
+
+
+async def get_reviews_by_place_id(place_id: str) -> list[dict[str, Any]]:
+    """Fetch reviews for a place using the Places API (New) — API key only.
+
+    Returns a list of dicts with keys: author_name, text, rating, time,
+    relative_time, author_url.  Up to 5 reviews sorted by newest.
+    """
+    settings = get_settings()
+    api_key = settings.google_api_key
+    if not api_key:
+        logger.warning("GOOGLE_API_KEY not set — cannot fetch reviews via Places API")
+        return []
+
+    url = f"{PLACES_API_BASE}/places/{place_id}"
+    headers = {
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": "reviews",
+    }
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+
+    raw_reviews = data.get("reviews", [])
+    reviews = []
+    for r in raw_reviews:
+        reviews.append({
+            "author_name": r.get("authorAttribution", {}).get("displayName", "A customer"),
+            "text": (r.get("text", {}).get("text", "") if isinstance(r.get("text"), dict)
+                     else r.get("text", "")),
+            "rating": r.get("rating", 5),
+            "time": r.get("publishTime", ""),
+            "relative_time": r.get("relativePublishTimeDescription", ""),
+        })
+
+    logger.info("Fetched %d reviews for place %s via Places API", len(reviews), place_id)
+    return reviews
 
 
 async def refresh_access_token(refresh_token: str) -> str:

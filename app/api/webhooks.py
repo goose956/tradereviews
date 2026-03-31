@@ -1,8 +1,12 @@
 """WhatsApp Cloud API webhook — verification (GET) and inbound messages (POST)."""
 
+import asyncio
+import hashlib
 import hmac
+import json
 import logging
 import re
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import httpx
@@ -14,16 +18,87 @@ from app.db.supabase import get_supabase
 from app.services.google import post_review_reply, refresh_access_token
 from app.services.message_log import log_message
 from app.services.parser import parse_review_command
-from app.services.whatsapp import send_interactive_buttons, send_template_message, send_text_message
+from app.services.whatsapp import (
+    send_interactive_buttons,
+    send_interactive_list,
+    send_template_message,
+    send_text_message,
+    download_media,
+)
+from app.services.openai_service import extract_receipt_data, parse_booking_details
+from app.services.email_service import (
+    send_email,
+    build_invoice_email,
+    build_quote_email,
+    build_review_email,
+)
+from app.services.sms_service import (
+    send_sms,
+    build_invoice_sms,
+    build_quote_sms,
+    build_review_sms,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook/whatsapp", tags=["webhook"])
 
 # ──────────────────────────────────────────────
-# Pending-command state  (collects missing info)
+# Message deduplication (prevent duplicate webhook processing)
 # ──────────────────────────────────────────────
-# keyed by sender raw phone → {"cmd": "INVOICE", ...partial data}
-_pending_commands: dict[str, dict[str, Any]] = {}
+_processed_msg_ids: dict[str, float] = {}  # msg_id → timestamp
+_DEDUP_TTL = 300  # keep IDs for 5 minutes
+
+
+def _is_duplicate(msg_id: str) -> bool:
+    """Return True if we already processed this message ID."""
+    now = datetime.now(timezone.utc).timestamp()
+    # Prune old entries
+    stale = [k for k, v in _processed_msg_ids.items() if now - v > _DEDUP_TTL]
+    for k in stale:
+        _processed_msg_ids.pop(k, None)
+    if msg_id in _processed_msg_ids:
+        return True
+    _processed_msg_ids[msg_id] = now
+    return False
+
+
+# ──────────────────────────────────────────────
+# Wizard session state + timeout (10 min)
+# ──────────────────────────────────────────────
+_wizard_sessions: dict[str, dict[str, Any]] = {}
+_wizard_timeouts: dict[str, asyncio.Task] = {}
+_SESSION_TIMEOUT = 600  # seconds
+
+
+def _start_timeout(sender: str, client: httpx.AsyncClient) -> None:
+    """Start or restart the 10-minute inactivity timer."""
+    old = _wizard_timeouts.pop(sender, None)
+    if old:
+        old.cancel()
+
+    async def _fire():
+        await asyncio.sleep(_SESSION_TIMEOUT)
+        session = _wizard_sessions.pop(sender, None)
+        _wizard_timeouts.pop(sender, None)
+        if session:
+            try:
+                await send_text_message(
+                    client, sender,
+                    "\u23f0 *Session ended* \u2014 no activity for 10 minutes.\n\n"
+                    "Type /START to begin a new session.",
+                )
+            except Exception:
+                pass
+
+    _wizard_timeouts[sender] = asyncio.create_task(_fire())
+
+
+def _wizard_end_session(sender: str) -> None:
+    """Clean up wizard session and cancel timeout."""
+    _wizard_sessions.pop(sender, None)
+    task = _wizard_timeouts.pop(sender, None)
+    if task:
+        task.cancel()
 
 
 # ──────────────────────────────────────────────
@@ -81,7 +156,7 @@ async def _maybe_handle_demo(
                 "\u2705 Boom. Review request sent to John. "
                 "It's that easy.\n\n"
                 "Your customer gets a friendly WhatsApp message like "
-                "the one below — with buttons they can tap.",
+                "the one below \u2014 with buttons they can tap.",
             )
 
             await send_text_message(
@@ -141,7 +216,7 @@ async def _handle_demo_button(
             "we instantly send him the link to your Google Business page "
             "to leave a 5-star review.\n\n"
             "If he'd tapped 'Could be better', we'd alert you privately "
-            "so you can fix it — before he leaves a bad review online.",
+            "so you can fix it \u2014 before he leaves a bad review online.",
         )
 
         await send_text_message(
@@ -154,7 +229,7 @@ async def _handle_demo_button(
 
         await send_interactive_buttons(
             client, sender,
-            "Start your 14-day free trial — no card required.",
+            "Start your 14-day free trial \u2014 no card required.",
             [{"id": "demo_start_trial", "title": "Start Free Trial"}],
         )
         return True
@@ -166,7 +241,7 @@ async def _handle_demo_button(
             client, sender,
             "\u26a0\ufe0f John said 'Could be better'. In a real scenario, "
             "we'd alert you privately with their name and number so you "
-            "can call them and fix it — before they leave a bad review "
+            "can call them and fix it \u2014 before they leave a bad review "
             "online.\n\n"
             "This 'review gating' protects your Google rating.",
         )
@@ -181,7 +256,7 @@ async def _handle_demo_button(
 
         await send_interactive_buttons(
             client, sender,
-            "Start your 14-day free trial — no card required.",
+            "Start your 14-day free trial \u2014 no card required.",
             [{"id": "demo_start_trial", "title": "Start Free Trial"}],
         )
         return True
@@ -228,13 +303,30 @@ async def verify_webhook(
 # ──────────────────────────────────────────────
 @router.post("", status_code=200)
 async def receive_message(request: Request) -> dict[str, str]:
-    body: dict[str, Any] = await request.json()
+    raw_body = await request.body()
+
+    # Verify webhook signature if app secret is configured
+    settings = get_settings()
+    app_secret = settings.whatsapp_app_secret
+    if app_secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        expected = "sha256=" + hmac.new(
+            app_secret.encode(), raw_body, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            logger.warning("Invalid webhook signature")
+            raise HTTPException(status_code=403, detail="Invalid signature")
+
+    body: dict[str, Any] = json.loads(raw_body)
 
     for entry in body.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
             for message in value.get("messages", []):
-                await _handle_message(message, request)
+                try:
+                    await _handle_message(message, request)
+                except Exception:
+                    logger.exception("Error handling message: %s", message.get("id", "?"))
 
     return {"status": "ok"}
 
@@ -243,6 +335,11 @@ async def receive_message(request: Request) -> dict[str, str]:
 # Message router
 # ──────────────────────────────────────────────
 async def _handle_message(message: dict[str, Any], request: Request) -> None:
+    msg_id = message.get("id", "")
+    if msg_id and _is_duplicate(msg_id):
+        logger.debug("Skipping duplicate message %s", msg_id)
+        return
+
     msg_type = message.get("type")
     sender = message.get("from", "")
     http_client = request.app.state.http_client
@@ -253,17 +350,22 @@ async def _handle_message(message: dict[str, Any], request: Request) -> None:
         return
 
     if msg_type == "interactive":
-        button_id = (
-            message.get("interactive", {})
-            .get("button_reply", {})
-            .get("id", "")
-        )
-        await _handle_button(sender, button_id, http_client)
+        interactive = message.get("interactive", {})
+        button_id = interactive.get("button_reply", {}).get("id", "")
+        if not button_id:
+            button_id = interactive.get("list_reply", {}).get("id", "")
+        if button_id:
+            await _handle_button(sender, button_id, http_client)
         return
 
     if msg_type == "text":
         text = message.get("text", {}).get("body", "")
         await _handle_text(sender, text, http_client)
+        return
+
+    if msg_type == "image":
+        image_info = message.get("image", {})
+        await _handle_image(sender, image_info, http_client)
         return
 
     logger.debug("Ignoring message type=%s from %s", msg_type, sender)
@@ -277,18 +379,6 @@ async def _handle_text(
 ) -> None:
     supabase = get_supabase()
     sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
-
-    # ── STOP opt-out (works regardless of sender role) ──
-    if text.strip().upper() == "STOP":
-        supabase.table("customers").update({"marketing_opt_in": 0}).eq(
-            "phone_number", sender_e164
-        ).execute()
-        await send_text_message(
-            client, sender,
-            "You've been unsubscribed from marketing messages. "
-            "You won't receive any more offers from us.",
-        )
-        return
 
     # ── Demo flow (non-registered leads from the website) ──
     if await _maybe_handle_demo(sender, text.strip(), client):
@@ -309,23 +399,44 @@ async def _handle_text(
 
 
 # ──────────────────────────────────────────────
-# Tradesperson command handling
+# Tradesperson — /START wizard flow
 # ──────────────────────────────────────────────
 async def _handle_tradesperson_text(
     sender: str, text: str, business: dict[str, Any], client: httpx.AsyncClient
 ) -> None:
-    """Process text from a registered business owner — commands or chat relay."""
+    """Process text from a registered business owner — wizard-based flow."""
     supabase = get_supabase()
     trimmed = text.strip()
     upper = trimmed.upper()
+    session = _wizard_sessions.get(sender)
 
-    # ── Priority: awaiting_edit draft (only for non-command text) ──
+    # ── Always-available commands ──
+    if upper.startswith("/LOGIN"):
+        await _cmd_login(sender, business, client)
+        return
+    if upper.startswith("/HELP"):
+        await send_text_message(
+            client, sender,
+            "\U0001f4cb *How to use JobPing*\n\n"
+            "Type /START to begin a new session.\n"
+            "The bot will walk you through sending reviews,\n"
+            "invoices, or quotes step by step.\n\n"
+            "Type /LOGIN to access your dashboard.",
+        )
+        return
+
+    # ── /START — begin a new wizard session ──
+    if upper in ("/START", "START"):
+        await _wizard_start(sender, business, client)
+        return
+
+    # ── In a session — wizard takes priority over everything else ──
+    if session:
+        await _wizard_handle_text(sender, trimmed, session, business, client)
+        return
+
+    # ── Handle awaiting_edit drafts (Google review replies) ──
     if not upper.startswith("/"):
-        # Check for pending command first
-        if sender in _pending_commands:
-            await _resume_pending(sender, trimmed, business, client)
-            return
-
         draft_result = (
             supabase.table("review_drafts")
             .select("id, google_review_id")
@@ -341,60 +452,331 @@ async def _handle_tradesperson_text(
             )
             return
 
-    # ── Command dispatch ──
-    # Starting a new command cancels any pending one
-    if upper.startswith("/"):
-        _pending_commands.pop(sender, None)
-
-    if upper.startswith("/SETUP"):
-        await _cmd_setup(sender, trimmed[6:].strip(), business, client)
-    elif upper.startswith("/REVIEW"):
-        await _cmd_review(sender, trimmed[7:].strip(), business, client)
-    elif upper.startswith("/INVOICE"):
-        await _cmd_invoice(sender, trimmed[8:].strip(), business, client)
-    elif upper.startswith("/QUOTE"):
-        await _cmd_quote(sender, trimmed[6:].strip(), business, client)
-    elif upper.startswith("/CHAT"):
-        await _cmd_chat(sender, trimmed[5:].strip(), business, client)
-    elif upper.startswith("/LOGIN"):
-        await _cmd_login(sender, business, client)
-    elif upper.startswith("/HELP"):
-        await _cmd_help(sender, trimmed[5:].strip(), client)
-    elif upper.startswith("/"):
-        await send_text_message(
-            client, sender,
-            "❓ Unknown command. Send /HELP for a list of commands.",
-        )
-    else:
-        # Normal free-text → relay to active customer
-        await _relay_to_customer(sender, trimmed, business, client)
+    # ── No session, not a recognised command ──
+    await send_text_message(
+        client, sender,
+        "\U0001f44b Type /START to begin.\n\n"
+        "I'll walk you through sending reviews, invoices,\n"
+        "or quotes to your customers.",
+    )
 
 
 # ──────────────────────────────────────────────
-# /SETUP <Name> <Phone>
+# Wizard step handlers
 # ──────────────────────────────────────────────
-async def _cmd_setup(
-    sender: str, args: str, business: dict[str, Any], client: httpx.AsyncClient
+
+_CHANNEL_LABELS = {
+    "whatsapp": "📱 WhatsApp",
+    "email": "📧 Email",
+    "sms": "💬 SMS",
+}
+
+
+def _action_menu_rows(channel: str = "whatsapp") -> list[dict]:
+    """Return the interactive-list rows for the action picker."""
+    ch_label = _CHANNEL_LABELS.get(channel, "📱 WhatsApp")
+    return [
+        {"id": "wiz_review", "title": "⭐ Review Request", "description": "Ask for a Google review"},
+        {"id": "wiz_invoice", "title": "💷 Send Invoice", "description": "Create & send an invoice"},
+        {"id": "wiz_quote", "title": "📋 Send Quote", "description": "Create & send a quote"},
+        {"id": "wiz_expense", "title": "🧾 Record Expense", "description": "Snap a receipt to log it"},
+        {"id": "wiz_view_expenses", "title": "📊 View Expenses", "description": "See your expense summary"},
+        {"id": "wiz_booking", "title": "📅 New Booking", "description": "Add a job to your calendar"},
+        {"id": "wiz_view_bookings", "title": "🗓 View Calendar", "description": "See upcoming bookings"},
+        {"id": "wiz_balance", "title": "💰 Account Balance", "description": "View income & outstanding"},
+        {"id": "wiz_dashboard", "title": "💻 Open Dashboard", "description": "Manage your account"},
+        {"id": "wiz_channel", "title": "📲 Change Channel", "description": f"Currently: {ch_label}"},
+    ]
+
+async def _wizard_start(
+    sender: str, business: dict[str, Any], client: httpx.AsyncClient
 ) -> None:
-    """Add a customer and send them an icebreaker message."""
-    supabase = get_supabase()
+    """Start a new wizard session — ask new or existing customer."""
+    _wizard_end_session(sender)
+    _wizard_sessions[sender] = {
+        "state": "choose_customer_type",
+        "business_id": business["id"],
+    }
+    _start_timeout(sender, client)
+    await send_interactive_buttons(
+        client, sender,
+        "\U0001f44b *Let's get started!*\n\n"
+        "Is this for a new customer or an existing one?",
+        [
+            {"id": "wiz_new", "title": "\u2795 New Customer"},
+            {"id": "wiz_existing", "title": "\U0001f4cb Existing Customer"},
+        ],
+    )
 
-    parsed = parse_review_command(args)
-    if not parsed:
+
+async def _wizard_handle_text(
+    sender: str, text: str, session: dict, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """Handle free-text input during a wizard session."""
+    state = session["state"]
+    _start_timeout(sender, client)
+
+    if text.upper() in ("CANCEL", "/CANCEL"):
+        _wizard_end_session(sender)
         await send_text_message(
             client, sender,
-            "Usage: /SETUP <Name> <Phone>\n"
-            "Example: /SETUP John Smith 07845774563",
+            "\u274c Session cancelled.\n\nType /START to begin again.",
         )
         return
 
-    # Upsert customer
+    if state == "awaiting_new_customer":
+        await _wizard_new_customer_input(sender, text, session, business, client)
+    elif state == "awaiting_customer_email":
+        await _wizard_email_input(sender, text, session, business, client)
+    elif state == "awaiting_invoice_details":
+        await _wizard_invoice_input(sender, text, session, business, client)
+    elif state == "awaiting_quote_details":
+        await _wizard_quote_input(sender, text, session, business, client)
+    elif state == "awaiting_booking_details":
+        await _wizard_booking_input(sender, text, session, business, client)
+    elif state == "awaiting_booking_name":
+        await _wizard_booking_name_input(sender, text, session, business, client)
+    elif state == "awaiting_receipt_photo":
+        await send_text_message(
+            client, sender,
+            "📸 Please send a *photo* of the receipt — not text.\n\n"
+            "Tap the 📎 or 📷 icon to attach an image.\n"
+            "Or type *CANCEL* to go back.",
+        )
+        return
+    else:
+        await send_text_message(
+            client, sender,
+            "\u261d\ufe0f Please tap one of the buttons above to continue.\n\n"
+            "Or type *CANCEL* to cancel.",
+        )
+
+
+async def _wizard_handle_button(
+    sender: str, payload: str, client: httpx.AsyncClient
+) -> bool:
+    """Handle wizard-prefixed button/list taps. Returns True if handled."""
+    session = _wizard_sessions.get(sender)
+    if not session:
+        return False
+
+    _start_timeout(sender, client)
+    supabase = get_supabase()
+
+    if payload == "wiz_new":
+        session["state"] = "awaiting_new_customer"
+        await send_text_message(
+            client, sender,
+            "\U0001f4dd Please type the customer's *name* and *phone number*.\n\n"
+            "Example: *John Smith 07845774563*",
+        )
+        return True
+
+    if payload == "wiz_existing":
+        biz = supabase.table("businesses").select("*").eq(
+            "id", session["business_id"]
+        ).execute()
+        business = biz.data[0] if biz.data else {}
+        await _wizard_show_existing_customers(sender, session, business, client)
+        return True
+
+    if payload.startswith("wiz_cust_"):
+        customer_id = payload.removeprefix("wiz_cust_")
+        biz = supabase.table("businesses").select("*").eq(
+            "id", session["business_id"]
+        ).execute()
+        business = biz.data[0] if biz.data else {}
+        await _wizard_customer_selected(sender, customer_id, business, client)
+        return True
+
+    if payload == "wiz_review":
+        biz = supabase.table("businesses").select("*").eq(
+            "id", session["business_id"]
+        ).execute()
+        business = biz.data[0] if biz.data else {}
+        await _wizard_review_check_invoices(sender, session, business, client)
+        return True
+
+    if payload.startswith("wiz_rev_inv_"):
+        invoice_id = payload.removeprefix("wiz_rev_inv_")
+        biz = supabase.table("businesses").select("*").eq(
+            "id", session["business_id"]
+        ).execute()
+        business = biz.data[0] if biz.data else {}
+        # Fetch invoice line items for personalisation
+        items = supabase.table("line_items").select("description").eq(
+            "parent_id", invoice_id
+        ).eq("parent_type", "invoice").execute()
+        job_desc = ", ".join(
+            it["description"] for it in (items.data or []) if it.get("description")
+        )
+        session["review_job_description"] = job_desc or ""
+        await _wizard_action_review(sender, business, client)
+        return True
+
+    if payload == "wiz_rev_skip":
+        biz = supabase.table("businesses").select("*").eq(
+            "id", session["business_id"]
+        ).execute()
+        business = biz.data[0] if biz.data else {}
+        session["review_job_description"] = ""
+        await _wizard_action_review(sender, business, client)
+        return True
+
+    if payload == "wiz_invoice":
+        await _wizard_action_invoice(sender, session, client)
+        return True
+
+    if payload == "wiz_quote":
+        await _wizard_action_quote(sender, session, client)
+        return True
+
+    if payload == "wiz_expense":
+        session["state"] = "awaiting_receipt_photo"
+        await send_text_message(
+            client, sender,
+            "📸 *Record an Expense*\n\n"
+            "Take a photo of your receipt or forward one from your gallery.\n\n"
+            "Type *CANCEL* to go back.",
+        )
+        return True
+
+    if payload == "wiz_booking":
+        session["state"] = "awaiting_booking_details"
+        await send_text_message(
+            client, sender,
+            "📅 *New Booking*\n\n"
+            "Type the job details — include a *date*, *time*, and *description*.\n\n"
+            "Examples:\n"
+            "• _Boiler service Tuesday 2pm_\n"
+            "• _Kitchen fitting 15 April 9am 3 hours_\n"
+            "• _Emergency callout tomorrow 8:30am_\n\n"
+            "Type *CANCEL* to go back.",
+        )
+        return True
+
+    if payload == "wiz_balance":
+        await _wizard_action_balance(sender, session, client)
+        return True
+
+    if payload == "wiz_view_expenses":
+        await _wizard_view_expenses(sender, session, client)
+        return True
+
+    if payload == "wiz_view_bookings":
+        await _wizard_view_bookings(sender, session, client)
+        return True
+
+    if payload == "wiz_dashboard":
+        biz = supabase.table("businesses").select("*").eq(
+            "id", session["business_id"]
+        ).execute()
+        business = biz.data[0] if biz.data else {}
+        _wizard_end_session(sender)
+        await _cmd_login(sender, business, client)
+        return True
+
+    if payload == "wiz_channel":
+        session["state"] = "choose_channel"
+        await send_interactive_list(
+            client, sender,
+            "📲 *Choose delivery channel*\n\n"
+            "How should we send to this customer?",
+            "Select Channel",
+            [{"title": "Channels", "rows": [
+                {"id": "wiz_ch_whatsapp", "title": "📱 WhatsApp", "description": "Send via WhatsApp (default)"},
+                {"id": "wiz_ch_email", "title": "📧 Email", "description": "Send via email (SendGrid)"},
+                {"id": "wiz_ch_sms", "title": "💬 SMS", "description": "Send via text message"},
+            ]}],
+        )
+        return True
+
+    if payload == "wiz_ch_whatsapp":
+        session["channel"] = "whatsapp"
+        session["state"] = "choose_action"
+        ch_label = _CHANNEL_LABELS["whatsapp"]
+        await send_interactive_list(
+            client, sender,
+            f"✅ Channel set to *{ch_label}*\n\nWhat would you like to do?",
+            "Choose an option",
+            [{"title": "Actions", "rows": _action_menu_rows("whatsapp")}],
+        )
+        return True
+
+    if payload == "wiz_ch_email":
+        # Check if customer has an email on file
+        cust_phone = session.get("customer_phone", "")
+        cust_result = (
+            supabase.table("customers")
+            .select("email")
+            .eq("business_id", session["business_id"])
+            .eq("phone_number", cust_phone)
+            .limit(1)
+            .execute()
+        )
+        existing_email = ""
+        if cust_result.data:
+            existing_email = cust_result.data[0].get("email", "")
+
+        if existing_email:
+            session["channel"] = "email"
+            session["customer_email"] = existing_email
+            session["state"] = "choose_action"
+            ch_label = _CHANNEL_LABELS["email"]
+            await send_interactive_list(
+                client, sender,
+                f"✅ Channel set to *{ch_label}*\n"
+                f"Email: {existing_email}\n\nWhat would you like to do?",
+                "Choose an option",
+                [{"title": "Actions", "rows": _action_menu_rows("email")}],
+            )
+        else:
+            session["state"] = "awaiting_customer_email"
+            await send_text_message(
+                client, sender,
+                "📧 No email on file for this customer.\n\n"
+                "Please type the customer's *email address*:",
+            )
+        return True
+
+    if payload == "wiz_ch_sms":
+        session["channel"] = "sms"
+        session["state"] = "choose_action"
+        ch_label = _CHANNEL_LABELS["sms"]
+        await send_interactive_list(
+            client, sender,
+            f"✅ Channel set to *{ch_label}*\n\nWhat would you like to do?",
+            "Choose an option",
+            [{"title": "Actions", "rows": _action_menu_rows("sms")}],
+        )
+        return True
+
+    return False
+
+
+async def _wizard_new_customer_input(
+    sender: str, text: str, session: dict, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """Parse name + phone from user input and save customer."""
+    parsed = parse_review_command(text)
+    if not parsed:
+        await send_text_message(
+            client, sender,
+            "\u26a0\ufe0f I couldn't read that.\n\n"
+            "Please type the customer's *name* and *phone number*.\n"
+            "Example: *John Smith 07845774563*",
+        )
+        return
+
+    supabase = get_supabase()
     supabase.table("customers").upsert(
         {
             "business_id": business["id"],
             "phone_number": parsed.phone,
             "name": parsed.name,
-            "status": "setup_sent",
+            "status": "active",
         },
         on_conflict="business_id,phone_number",
     ).execute()
@@ -404,97 +786,291 @@ async def _cmd_setup(
         {"active_customer_phone": parsed.phone}
     ).eq("id", business["id"]).execute()
 
-    # Send icebreaker to the customer
-    first_name = parsed.name.split()[0]
-    biz_name = business["business_name"]
-    icebreaker = (
-        f"Hi {first_name}! \U0001f44b This is the automated assistant for "
-        f"{biz_name}.\n\n"
-        f"We've set up this chat so we can easily send you updates, "
-        f"quotes, and invoices for your job.\n\n"
-        f"You can reply directly to this message anytime to chat "
-        f"with the team!"
+    session["customer_phone"] = parsed.phone
+    session["customer_name"] = parsed.name
+    session["state"] = "choose_action"
+    session.setdefault("channel", "whatsapp")
+
+    await send_interactive_list(
+        client, sender,
+        f"\u2705 *{parsed.name}* ({parsed.phone}) added!\n\n"
+        f"What would you like to do?",
+        "Choose an option",
+        [{"title": "Actions", "rows": _action_menu_rows(session["channel"])}],
     )
 
-    customer_phone = parsed.phone.lstrip("+")
-    try:
-        await send_text_message(client, customer_phone, icebreaker)
-    except Exception:
-        logger.exception("Failed to send icebreaker to %s", parsed.phone)
+
+async def _wizard_email_input(
+    sender: str, text: str, session: dict, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """Save customer email and switch channel to email."""
+    email = text.strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
         await send_text_message(
             client, sender,
-            f"\u2705 {parsed.name} ({parsed.phone}) saved, but the "
-            f"icebreaker failed to send. They may need to message "
-            f"this number first to open the chat window.",
+            "⚠️ That doesn't look like a valid email address.\n\n"
+            "Please type the customer's *email address*:",
         )
         return
 
-    log_message(
-        business_id=business["id"],
-        to_phone=parsed.phone,
-        message_body=icebreaker,
-        message_type="icebreaker",
-    )
-
-    await send_text_message(
-        client, sender,
-        f"\u2705 {parsed.name} ({parsed.phone}) has been set up and an "
-        f"icebreaker sent!\n\n"
-        f"They're now your active chat \u2014 just type normally to "
-        f"message them.",
-    )
-    logger.info("SETUP: biz=%s customer=%s", business["id"], parsed.phone)
-
-
-# ──────────────────────────────────────────────
-# /REVIEW [Name Phone]
-# ──────────────────────────────────────────────
-async def _cmd_review(
-    sender: str, args: str, business: dict[str, Any], client: httpx.AsyncClient
-) -> None:
-    """Send a review request to a specific customer or the active one."""
     supabase = get_supabase()
+    cust_phone = session.get("customer_phone", "")
+    supabase.table("customers").update({"email": email}).eq(
+        "business_id", business["id"]
+    ).eq("phone_number", cust_phone).execute()
 
-    if args:
-        parsed = parse_review_command(args)
-        if not parsed:
-            await send_text_message(
-                client, sender,
-                "Usage: /REVIEW <Name> <Phone>\n"
-                "Or just /REVIEW to send to your active chat customer.",
-            )
-            return
-        customer_phone = parsed.phone
-        customer_name = parsed.name
+    session["channel"] = "email"
+    session["customer_email"] = email
+    session["state"] = "choose_action"
+    ch_label = _CHANNEL_LABELS["email"]
 
-        # Set as active customer
-        supabase.table("businesses").update(
-            {"active_customer_phone": customer_phone}
-        ).eq("id", business["id"]).execute()
+    await send_interactive_list(
+        client, sender,
+        f"✅ Email saved! Channel set to *{ch_label}*\n"
+        f"Email: {email}\n\nWhat would you like to do?",
+        "Choose an option",
+        [{"title": "Actions", "rows": _action_menu_rows("email")}],
+    )
+
+
+async def _wizard_show_existing_customers(
+    sender: str, session: dict, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """Show customer list for selection (buttons if <=3, list if more)."""
+    supabase = get_supabase()
+    custs = (
+        supabase.table("customers")
+        .select("id, name, phone_number")
+        .eq("business_id", business["id"])
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    if not custs.data:
+        session["state"] = "awaiting_new_customer"
+        await send_text_message(
+            client, sender,
+            "You don't have any customers yet.\n\n"
+            "Please type the customer's *name* and *phone number*.\n"
+            "Example: *John Smith 07845774563*",
+        )
+        return
+
+    session["state"] = "awaiting_customer_pick"
+
+    if len(custs.data) <= 3:
+        buttons = [
+            {"id": f"wiz_cust_{c['id']}", "title": c["name"][:20]}
+            for c in custs.data
+        ]
+        await send_interactive_buttons(
+            client, sender, "Which customer?", buttons,
+        )
     else:
-        # Use active customer
-        customer_phone = business.get("active_customer_phone") or ""
-        if not customer_phone:
-            await send_text_message(
-                client, sender,
-                "No active customer. Use /REVIEW <Name> <Phone> "
-                "or /CHAT <Name> to select one first.",
-            )
-            return
-        cust_result = (
-            supabase.table("customers")
-            .select("name")
+        rows = [
+            {
+                "id": f"wiz_cust_{c['id']}",
+                "title": c["name"][:24],
+                "description": c["phone_number"],
+            }
+            for c in custs.data[:10]
+        ]
+        await send_interactive_list(
+            client, sender,
+            "Which customer is this for?",
+            "Select Customer",
+            [{"title": "Customers", "rows": rows}],
+        )
+
+
+async def _wizard_customer_selected(
+    sender: str, customer_id: str, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """A customer was picked from the button/list — show action menu."""
+    session = _wizard_sessions.get(sender)
+    if not session:
+        return
+
+    supabase = get_supabase()
+    cust_result = (
+        supabase.table("customers")
+        .select("id, name, phone_number")
+        .eq("id", customer_id)
+        .limit(1)
+        .execute()
+    )
+    if not cust_result.data:
+        await send_text_message(client, sender, "\u26a0\ufe0f Customer not found.")
+        return
+
+    cust = cust_result.data[0]
+    supabase.table("businesses").update(
+        {"active_customer_phone": cust["phone_number"]}
+    ).eq("id", business["id"]).execute()
+
+    session["customer_phone"] = cust["phone_number"]
+    session["customer_name"] = cust["name"]
+    session["state"] = "choose_action"
+    session.setdefault("channel", "whatsapp")
+
+    await send_interactive_list(
+        client, sender,
+        f"\u2705 Selected *{cust['name']}*\n\nWhat would you like to do?",
+        "Choose an option",
+        [{"title": "Actions", "rows": _action_menu_rows(session["channel"])}],
+    )
+
+
+async def _wizard_action_balance(
+    sender: str, session: dict, client: httpx.AsyncClient
+) -> None:
+    """Show account balance: total invoiced, paid, and outstanding."""
+    supabase = get_supabase()
+    biz_id = session["business_id"]
+
+    invoices = (
+        supabase.table("invoices")
+        .select("total, status, paid_at")
+        .eq("business_id", biz_id)
+        .execute()
+    )
+
+    total_invoiced = 0.0
+    total_paid = 0.0
+    outstanding = 0.0
+    num_invoices = 0
+    num_paid = 0
+    num_outstanding = 0
+
+    for inv in (invoices.data or []):
+        amount = inv.get("total", 0) or 0
+        total_invoiced += amount
+        num_invoices += 1
+        if inv.get("paid_at") or inv.get("status") == "paid":
+            total_paid += amount
+            num_paid += 1
+        else:
+            outstanding += amount
+            num_outstanding += 1
+
+    quotes = (
+        supabase.table("quotes")
+        .select("total, status")
+        .eq("business_id", biz_id)
+        .execute()
+    )
+    num_quotes = len(quotes.data or [])
+    quotes_total = sum((q.get("total", 0) or 0) for q in (quotes.data or []))
+
+    msg = (
+        f"\U0001f4b0 *Account Balance*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"\U0001f4cb *Invoices:* {num_invoices}\n"
+        f"\U0001f4b7 *Total Invoiced:* £{total_invoiced:,.2f}\n"
+        f"\u2705 *Paid:* £{total_paid:,.2f} ({num_paid})\n"
+        f"\u23f3 *Outstanding:* £{outstanding:,.2f} ({num_outstanding})\n\n"
+        f"\U0001f4dd *Quotes Sent:* {num_quotes} (£{quotes_total:,.2f})\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"What would you like to do next?"
+    )
+
+    await send_interactive_list(
+        client, sender, msg,
+        "Choose an option",
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+    )
+
+
+async def _wizard_review_check_invoices(
+    sender: str, session: dict, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """Check if the customer has invoices — if so, offer to personalise the review request."""
+    supabase = get_supabase()
+    customer_phone = session.get("customer_phone", "")
+    customer_name = session.get("customer_name", "Customer")
+
+    # Look up customer ID
+    cust = (
+        supabase.table("customers")
+        .select("id")
+        .eq("business_id", business["id"])
+        .eq("phone_number", customer_phone)
+        .limit(1)
+        .execute()
+    )
+    cust_id = cust.data[0]["id"] if cust.data else None
+
+    if cust_id:
+        invoices = (
+            supabase.table("invoices")
+            .select("id, invoice_number, total, created_at")
             .eq("business_id", business["id"])
-            .eq("phone_number", customer_phone)
-            .limit(1)
+            .eq("customer_id", cust_id)
             .execute()
         )
-        customer_name = (
-            cust_result.data[0]["name"] if cust_result.data else "there"
-        )
+    else:
+        invoices = type("R", (), {"data": []})()
 
-    # Upsert customer with review_requested_at timestamp
-    from datetime import datetime, timezone
+    if invoices.data:
+        # Fetch line items for each invoice to show job descriptions
+        rows = []
+        for inv in invoices.data[:9]:  # Max 9 + skip = 10 rows
+            items = (
+                supabase.table("line_items")
+                .select("description")
+                .eq("parent_id", inv["id"])
+                .eq("parent_type", "invoice")
+                .execute()
+            )
+            desc = ", ".join(
+                it["description"] for it in (items.data or []) if it.get("description")
+            )[:70] or "Invoice"
+            date_str = inv["created_at"][:10] if inv.get("created_at") else ""
+            total = inv.get("total", 0) or 0
+            rows.append({
+                "id": f"wiz_rev_inv_{inv['id']}",
+                "title": f"#{inv['invoice_number']} — £{total:,.2f}",
+                "description": f"{desc} ({date_str})" if date_str else desc,
+            })
+
+        rows.append({
+            "id": "wiz_rev_skip",
+            "title": "Skip — send generic",
+            "description": "Send without job details",
+        })
+
+        await send_interactive_list(
+            client, sender,
+            f"📋 *{customer_name}* has {len(invoices.data)} invoice(s).\n\n"
+            f"Pick one to personalise the review request with the job details, "
+            f"or skip for a generic message.",
+            "Select Invoice",
+            [{"title": "Invoices", "rows": rows}],
+        )
+    else:
+        # No invoices — go straight to generic review request
+        session["review_job_description"] = ""
+        await _wizard_action_review(sender, business, client)
+
+
+async def _wizard_action_review(
+    sender: str, business: dict[str, Any], client: httpx.AsyncClient
+) -> None:
+    """Send a review request to the selected customer."""
+    session = _wizard_sessions.get(sender)
+    if not session:
+        return
+
+    customer_phone = session.get("customer_phone", "")
+    customer_name = session.get("customer_name", "Customer")
+    channel = session.get("channel", "whatsapp")
+    customer_email = session.get("customer_email", "")
+
+    supabase = get_supabase()
     supabase.table("customers").upsert(
         {
             "business_id": business["id"],
@@ -507,115 +1083,216 @@ async def _cmd_review(
     ).execute()
 
     first_name = customer_name.split()[0]
-    await send_template_message(
-        client,
-        to_phone=customer_phone.lstrip("+"),
-        customer_name=first_name,
-        business_name=business["business_name"],
+    biz_name = business["business_name"]
+    review_link = business.get("google_review_link", "")
+    job_desc = session.get("review_job_description", "")
+    ch_label = _CHANNEL_LABELS.get(channel, "WhatsApp")
+    sent_via = ""
+
+    # Build personalised snippet if job details are available
+    job_snippet = f" for the {job_desc}" if job_desc else ""
+    job_thanks = (
+        f"We hope you're happy with the {job_desc} we completed for you. "
+        if job_desc
+        else ""
     )
+
+    try:
+        if channel == "email" and customer_email:
+            subject, html_body, plain_body = build_review_email(
+                customer_name=customer_name, first_name=first_name,
+                biz_name=biz_name,
+                review_link=review_link or "https://g.page/review",
+                job_description=job_desc,
+            )
+            await send_email(client, customer_email, subject, html_body, plain_body)
+            sent_via = f"via email to {customer_email}"
+        elif channel == "sms":
+            sms_body = build_review_sms(
+                first_name=first_name, biz_name=biz_name,
+                review_link=review_link or "https://g.page/review",
+                job_description=job_desc,
+            )
+            await send_sms(client, customer_phone, sms_body)
+            sent_via = f"via SMS to {customer_phone}"
+        else:
+            customer_raw = customer_phone.lstrip("+")
+            try:
+                await send_template_message(
+                    client,
+                    to_phone=customer_raw,
+                    customer_name=first_name,
+                    business_name=biz_name,
+                )
+            except Exception:
+                logger.info("Template failed, falling back to interactive buttons for %s", customer_phone)
+                await send_interactive_buttons(
+                    client, customer_raw,
+                    f"Hi {first_name}, thanks for choosing {biz_name}{job_snippet}! "
+                    f"{job_thanks}"
+                    f"How was your experience?",
+                    [
+                        {"id": "review_great", "title": "Great! ⭐"},
+                        {"id": "could_be_better", "title": "Could be better"},
+                    ],
+                )
+            sent_via = f"via WhatsApp to {customer_phone}"
+    except Exception:
+        logger.exception("Failed to send review request (%s) to %s", channel, customer_phone)
+        await send_text_message(
+            client, sender,
+            f"⚠️ Failed to send review request to {customer_name} ({ch_label}).\n\n"
+            f"Type /START to try again.",
+        )
+        _wizard_end_session(sender)
+        return
 
     log_message(
         business_id=business["id"],
         to_phone=customer_phone,
-        message_body=(
-            f"Review request sent to {customer_name} ({customer_phone}) "
-            f"on behalf of {business['business_name']}"
-        ),
+        message_body=f"Review request sent to {customer_name} {sent_via}",
         message_type="review_request",
     )
 
+    _wizard_end_session(sender)
     await send_text_message(
         client, sender,
-        f"\u2705 Review request sent to {customer_name} "
-        f"({customer_phone}).\nThey'll receive a WhatsApp asking "
-        f"about their experience with {business['business_name']}.",
-    )
-    logger.info(
-        "REVIEW: biz=%s customer=%s", business["id"], customer_phone
+        f"\u2705 Review request sent to *{customer_name}* ({sent_via})!\n\n"
+        f"Session ended. Type /START for a new session.",
     )
 
 
-# ──────────────────────────────────────────────
-# /INVOICE <Amount> <Description>
-# ──────────────────────────────────────────────
-async def _cmd_invoice(
-    sender: str, args: str, business: dict[str, Any], client: httpx.AsyncClient
+async def _wizard_action_invoice(
+    sender: str, session: dict, client: httpx.AsyncClient
 ) -> None:
-    """Create & send an invoice.  Asks follow-up questions for missing info."""
+    """Transition to invoice details input."""
+    session["state"] = "awaiting_invoice_details"
+    _start_timeout(sender, client)
+    await send_text_message(
+        client, sender,
+        "\U0001f4dd *Invoice*\n\n"
+        "Please type the *job description* and *total cost*.\n\n"
+        "Example: *Boiler repair 250*\n"
+        "Example: *Emergency callout + new tap \u00a3180*",
+    )
 
-    # ── Must have an active customer first ──
-    customer_phone = business.get("active_customer_phone") or ""
-    if not customer_phone:
+
+async def _wizard_action_quote(
+    sender: str, session: dict, client: httpx.AsyncClient
+) -> None:
+    """Transition to quote details input."""
+    session["state"] = "awaiting_quote_details"
+    _start_timeout(sender, client)
+    await send_text_message(
+        client, sender,
+        "\U0001f4dd *Quote*\n\n"
+        "Please type the *job description* and *estimated cost*.\n\n"
+        "Example: *Full bathroom refit 2500*\n"
+        "Example: *New boiler installation \u00a31800*",
+    )
+
+
+async def _wizard_invoice_input(
+    sender: str, text: str, session: dict, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """Parse invoice details from free text."""
+    amount, description = _parse_invoice_args(text)
+
+    # If they previously gave just an amount, treat this text as description
+    if amount is None and session.get("pending_amount") and text.strip():
+        description = text.strip()
+        amount = session.pop("pending_amount")
+
+    if amount is None:
         await send_text_message(
             client, sender,
-            "\u26a0\ufe0f No active customer.\n\n"
-            "Use /SETUP <Name> <Phone> to add a customer first, "
-            "or /CHAT <Name> to select an existing one.",
+            "\u26a0\ufe0f I couldn't find an amount.\n\n"
+            "Please include the *cost* and *description*.\n"
+            "Example: *Boiler repair 250*\n\n"
+            "Type *CANCEL* to cancel.",
         )
         return
 
-    # ── Try to parse amount + description from args ──
-    amount, description = _parse_invoice_args(args)
-
-    # Nothing at all — ask for everything
-    if amount is None and not description:
-        _pending_commands[sender] = {
-            "cmd": "INVOICE",
-            "step": "need_amount",
-            "business_id": business["id"],
-            "customer_phone": customer_phone,
-        }
-        await send_text_message(
-            client, sender,
-            "\U0001f4dd *Let's create an invoice.*\n\n"
-            "What is the *amount*? (e.g. 250)",
-        )
-        return
-
-    # Have amount but no description
-    if amount is not None and not description:
-        _pending_commands[sender] = {
-            "cmd": "INVOICE",
-            "step": "need_description",
-            "amount": amount,
-            "business_id": business["id"],
-            "customer_phone": customer_phone,
-        }
+    if not description:
+        session["pending_amount"] = amount
         await send_text_message(
             client, sender,
             f"\u2705 Amount: \u00a3{amount:.2f}\n\n"
-            f"What is this invoice *for*? "
-            f"(e.g. Bathroom refit, Boiler service)",
+            f"Now type a short *description* of the job.\n"
+            f"Example: *Boiler repair*",
         )
         return
 
-    # Have description but no amount (unlikely but handle it)
-    if amount is None and description:
-        _pending_commands[sender] = {
-            "cmd": "INVOICE",
-            "step": "need_amount",
-            "description": description,
-            "business_id": business["id"],
-            "customer_phone": customer_phone,
-        }
-        await send_text_message(
-            client, sender,
-            f"\u2705 Description: {description}\n\n"
-            f"What is the *amount*? (e.g. 250)",
-        )
-        return
-
-    # Have both — create the invoice
+    # Force confirm-before-send so they can review before sending
+    business["confirm_before_send"] = True
+    session["state"] = "confirm_invoice"
     await _finalise_invoice(sender, amount, description, business, client)
 
+
+async def _wizard_quote_input(
+    sender: str, text: str, session: dict, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """Parse quote details from free text."""
+    amount, description = _parse_invoice_args(text)
+
+    if amount is None and session.get("pending_amount") and text.strip():
+        description = text.strip()
+        amount = session.pop("pending_amount")
+
+    if amount is None:
+        await send_text_message(
+            client, sender,
+            "\u26a0\ufe0f I couldn't find an amount.\n\n"
+            "Please include the *estimated cost* and *description*.\n"
+            "Example: *Full bathroom refit 2500*\n\n"
+            "Type *CANCEL* to cancel.",
+        )
+        return
+
+    if not description:
+        session["pending_amount"] = amount
+        await send_text_message(
+            client, sender,
+            f"\u2705 Amount: \u00a3{amount:.2f}\n\n"
+            f"Now type a short *description* of the work.\n"
+            f"Example: *Full bathroom refit*",
+        )
+        return
+
+    business["confirm_before_send"] = True
+    session["state"] = "confirm_quote"
+    await _finalise_quote(sender, amount, description, business, client)
+
+
+# ──────────────────────────────────────────────
+# /LOGIN
+# ──────────────────────────────────────────────
+async def _cmd_login(sender: str, business: dict[str, Any], client: httpx.AsyncClient) -> None:
+    """Send a direct login link to the dashboard."""
+    settings = get_settings()
+
+    base = settings.base_url.rstrip("/")
+    login_url = f"{base}/login.html"
+
+    msg = (
+        f"\U0001f449 Open your dashboard:\n{login_url}\n\n"
+        f"Tap the link, enter your phone number, and we'll send you a login code."
+    )
+    await send_text_message(client, sender, msg)
+
+
+# ──────────────────────────────────────────────
+# Invoice / Quote creation helpers
+# ──────────────────────────────────────────────
 
 def _parse_invoice_args(args: str) -> tuple[float | None, str]:
     """Parse amount and description from command arguments.
 
     Accepts flexible formats like:
       250 Plumbing work
-      Test 250 Plumbing work
-      £250 Plumbing
+      \u00a3250 Plumbing
       Plumbing work 250
     Returns (amount_or_None, description_string).
     """
@@ -623,136 +1300,19 @@ def _parse_invoice_args(args: str) -> tuple[float | None, str]:
     if not args:
         return None, ""
 
-    # Find a monetary amount anywhere in the string (£/$, commas, decimals)
+    # Find a monetary amount anywhere in the string
     m = re.search(r"[\u00a3$]?\s*([\d,]+(?:\.\d{1,2})?)\b", args)
     if m:
         try:
             amount = float(m.group(1).replace(",", ""))
         except ValueError:
             return None, args
-        # Everything except the matched number is the description
         desc = (args[:m.start()] + " " + args[m.end():]).strip()
-        # Collapse double spaces and clean up any leftover £/$ at the boundary
         desc = re.sub(r"\s{2,}", " ", desc)
         desc = re.sub(r"^[\u00a3$]\s*", "", desc).strip()
         return amount, desc
 
-    # No number found — the whole thing is a description
     return None, args
-
-
-async def _resume_pending(
-    sender: str, text: str, business: dict[str, Any], client: httpx.AsyncClient
-) -> None:
-    """Continue collecting info for a pending command."""
-    pending = _pending_commands.get(sender)
-    if not pending:
-        return
-
-    # Allow cancellation
-    if text.strip().upper() in ("CANCEL", "/CANCEL", "STOP", "NEVERMIND"):
-        _pending_commands.pop(sender, None)
-        cmd = pending.get("cmd", "request")
-        await send_text_message(
-            client, sender, f"\u274c Cancelled. No {cmd.lower()} was created."
-        )
-        return
-
-    cmd = pending.get("cmd")
-
-    if cmd == "INVOICE":
-        await _resume_invoice(sender, text, pending, business, client)
-    elif cmd == "QUOTE":
-        await _resume_quote(sender, text, pending, business, client)
-    else:
-        # Unknown pending command — clear it
-        _pending_commands.pop(sender, None)
-
-
-async def _resume_invoice(
-    sender: str, text: str, pending: dict, business: dict[str, Any],
-    client: httpx.AsyncClient,
-) -> None:
-    """Resume an in-progress invoice creation."""
-    step = pending.get("step")
-
-    if step == "need_amount":
-        # Try to extract a number from their reply
-        m = re.search(r"[\u00a3$]?\s*([\d,]+(?:\.\d{1,2})?)", text)
-        if not m:
-            await send_text_message(
-                client, sender,
-                "\u26a0\ufe0f I didn't catch a number there.\n"
-                "Please enter the *amount* (e.g. 250).\n\n"
-                "Type *CANCEL* to cancel.",
-            )
-            return
-        try:
-            amount = float(m.group(1).replace(",", ""))
-        except ValueError:
-            await send_text_message(
-                client, sender,
-                "\u26a0\ufe0f That doesn't look like a valid amount.\n"
-                "Please enter a number (e.g. 250).\n\n"
-                "Type *CANCEL* to cancel.",
-            )
-            return
-
-        if amount <= 0:
-            await send_text_message(
-                client, sender,
-                "\u26a0\ufe0f The amount must be greater than zero.\n\n"
-                "Type *CANCEL* to cancel.",
-            )
-            return
-
-        # Already have a description?
-        description = pending.get("description", "")
-        if description:
-            _pending_commands.pop(sender, None)
-            await _finalise_invoice(sender, amount, description, business, client)
-            return
-
-        # Still need description
-        pending["amount"] = amount
-        pending["step"] = "need_description"
-        await send_text_message(
-            client, sender,
-            f"\u2705 Amount: \u00a3{amount:.2f}\n\n"
-            f"What is this invoice *for*? "
-            f"(e.g. Bathroom refit, Boiler service)",
-        )
-        return
-
-    if step == "need_description":
-        description = text.strip()
-        if len(description) < 3:
-            await send_text_message(
-                client, sender,
-                "\u26a0\ufe0f Please provide a short description of the work "
-                "(at least a few words).\n\n"
-                "Type *CANCEL* to cancel.",
-            )
-            return
-
-        amount = pending.get("amount")
-        if amount is None:
-            # Shouldn't happen, but handle gracefully
-            pending["description"] = description
-            pending["step"] = "need_amount"
-            await send_text_message(
-                client, sender,
-                f"\u2705 Description: {description}\n\n"
-                f"What is the *amount*? (e.g. 250)",
-            )
-            return
-
-        _pending_commands.pop(sender, None)
-        await _finalise_invoice(sender, amount, description, business, client)
-        return
-
-    # Unknown step — reset
-    _pending_commands.pop(sender, None)
 
 
 async def _finalise_invoice(
@@ -813,84 +1373,121 @@ async def _finalise_invoice(
         "sort_order": 0,
     }).execute()
 
-    # Pick the right currency symbol
     sym = "\u00a3" if currency == "GBP" else "$" if currency == "USD" else f"{currency} "
 
-    # Build PDF link
     settings = get_settings()
     pdf_url = f"{settings.base_url}/member/business/{business['id']}/invoices/{inv['id']}/pdf"
 
-    # ── Check if confirm-before-send is enabled ──
+    # Get channel from wizard session
+    session = _wizard_sessions.get(sender, {})
+    channel = session.get("channel", "whatsapp")
+    customer_email = session.get("customer_email", "")
+    ch_label = _CHANNEL_LABELS.get(channel, "📱 WhatsApp")
+
+    # ── Always show preview with confirm/cancel ──
     if business.get("confirm_before_send"):
         preview_msg = (
-            f"\U0001f50d *Invoice Preview — {inv_number}*\n"
-            f"To: {customer_name} ({customer_phone})\n\n"
+            f"\U0001f50d *Invoice Preview \u2014 {inv_number}*\n"
+            f"To: {customer_name} ({customer_phone})\n"
+            f"📲 Sending via: {ch_label}\n\n"
             f"\u2022 {description}\n"
             f"\u2022 Subtotal: {sym}{subtotal:.2f}\n"
             f"\u2022 VAT ({tax_rate:.0f}%): {sym}{tax_amount:.2f}\n"
             f"\u2022 *Total: {sym}{total:.2f}*\n\n"
-            f"\U0001f4e4 PDF: {pdf_url}\n\n"
+            f"\U0001f4ce PDF: {pdf_url}\n\n"
             f"Happy with this? Tap *Send* to deliver it to {first_name}, "
             f"or *Cancel* to discard."
         )
-        await send_interactive_buttons(client, sender, preview_msg, [
-            {"id": f"sendinv_{inv['id']}", "title": "\u2705 Send"},
-            {"id": f"cancelinv_{inv['id']}", "title": "\u274c Cancel"},
-        ])
-        logger.info(
-            "INVOICE PREVIEW: biz=%s inv=%s total=%s (awaiting confirm)",
-            business["id"], inv_number, total,
-        )
+        try:
+            resp = await send_interactive_buttons(client, sender, preview_msg, [
+                {"id": f"sendinv_{inv['id']}", "title": "\u2705 Send"},
+                {"id": f"cancelinv_{inv['id']}", "title": "\u274c Cancel"},
+            ])
+            logger.info(
+                "INVOICE PREVIEW sent: biz=%s inv=%s total=%s resp=%s",
+                business["id"], inv_number, total, resp,
+            )
+        except Exception:
+            logger.exception("INVOICE PREVIEW SEND FAILED for inv=%s", inv_number)
         return
 
-    # ── No confirmation needed — send straight away ──
+    # ── No confirmation — send straight away ──
     await _send_invoice_to_customer(
         sender, inv, invoice_number=inv_number, description=description,
         subtotal=subtotal, tax_rate=tax_rate, tax_amount=tax_amount,
-        total=total, sym=sym, pdf_url=pdf_url,
+        total=total, sym=sym,
         customer_name=customer_name, customer_phone=customer_phone,
         first_name=first_name, biz_name=biz_name,
         business=business, client=client,
+        channel=channel, customer_email=customer_email,
     )
 
 
 async def _send_invoice_to_customer(
     sender: str, inv: dict, *, invoice_number: str, description: str,
     subtotal: float, tax_rate: float, tax_amount: float, total: float,
-    sym: str, pdf_url: str, customer_name: str, customer_phone: str,
+    sym: str, customer_name: str, customer_phone: str,
     first_name: str, biz_name: str,
     business: dict[str, Any], client: httpx.AsyncClient,
+    channel: str = "whatsapp", customer_email: str = "",
 ) -> None:
-    """Actually deliver the invoice to the customer and confirm to the tradesperson."""
-
+    """Deliver the invoice to the customer and confirm to the tradesperson."""
     supabase = get_supabase()
-
-    invoice_msg = (
-        f"Hi {first_name}, here is your invoice from {biz_name}:\n\n"
-        f"\U0001f4c4 *Invoice {invoice_number}*\n"
-        f"\u2022 {description}\n"
-        f"\u2022 Subtotal: {sym}{subtotal:.2f}\n"
-        f"\u2022 VAT ({tax_rate:.0f}%): {sym}{tax_amount:.2f}\n"
-        f"\u2022 *Total: {sym}{total:.2f}*\n\n"
-        f"\U0001f4e4 View/download PDF:\n{pdf_url}\n\n"
-        f"\U0001f4b3 Payment details will follow shortly."
-    )
-
+    settings = get_settings()
+    personal_phone = _format_phone_display(business.get("phone_number", ""))
     customer_raw = customer_phone.lstrip("+")
+    pdf_url = f"{settings.base_url}/member/business/{business['id']}/invoices/{inv['id']}/pdf"
+
+    ch_label = _CHANNEL_LABELS.get(channel, "WhatsApp")
+    sent_via = ""
+
     try:
-        await send_text_message(client, customer_raw, invoice_msg)
+        if channel == "email" and customer_email:
+            subject, html_body, plain_body = build_invoice_email(
+                customer_name=customer_name, first_name=first_name,
+                biz_name=biz_name, invoice_number=invoice_number,
+                description=description, subtotal=subtotal,
+                tax_rate=tax_rate, tax_amount=tax_amount,
+                total=total, sym=sym, pdf_url=pdf_url,
+                personal_phone=personal_phone,
+            )
+            await send_email(client, customer_email, subject, html_body, plain_body)
+            sent_via = f"via email to {customer_email}"
+        elif channel == "sms":
+            sms_body = build_invoice_sms(
+                first_name=first_name, biz_name=biz_name,
+                invoice_number=invoice_number, description=description,
+                total=total, sym=sym, pdf_url=pdf_url,
+                personal_phone=personal_phone,
+            )
+            await send_sms(client, customer_phone, sms_body)
+            sent_via = f"via SMS to {customer_phone}"
+        else:
+            invoice_msg = (
+                f"Hi {first_name}, here is your invoice from {biz_name}:\n\n"
+                f"\U0001f4c4 *Invoice {invoice_number}*\n"
+                f"\u2022 {description}\n"
+                f"\u2022 Subtotal: {sym}{subtotal:.2f}\n"
+                f"\u2022 VAT ({tax_rate:.0f}%): {sym}{tax_amount:.2f}\n"
+                f"\u2022 *Total: {sym}{total:.2f}*\n\n"
+                f"\U0001f4ce Download PDF: {pdf_url}\n\n"
+                f"\U0001f4b3 Payment details will follow shortly.\n\n"
+                f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+                f"\u26a0\ufe0f This is an automated message. Please do not reply here.\n"
+                f"To discuss this job, contact {biz_name} on *{personal_phone}*"
+            )
+            await send_text_message(client, customer_raw, invoice_msg)
+            sent_via = f"via WhatsApp to {customer_phone}"
     except Exception:
-        logger.exception("Failed to send invoice to %s", customer_phone)
+        logger.exception("Failed to send invoice (%s) to %s", channel, customer_phone)
         await send_text_message(
             client, sender,
             f"\u2705 Invoice {invoice_number} created for {sym}{total:.2f}, "
-            f"but failed to send to {customer_name}. "
+            f"but failed to send to {customer_name} ({ch_label}). "
             f"You can send the PDF from your dashboard.",
         )
         return
 
-    # Mark sent timestamp & status
-    from datetime import datetime, timezone
     supabase.table("invoices").update({
         "status": "sent",
         "sent_at": datetime.now(timezone.utc).isoformat(),
@@ -899,172 +1496,22 @@ async def _send_invoice_to_customer(
     log_message(
         business_id=business["id"],
         to_phone=customer_phone,
-        message_body=invoice_msg,
+        message_body=f"Invoice {invoice_number} sent {sent_via}",
         message_type="invoice",
     )
 
-    # ── Confirm to the tradesperson ──
     await send_text_message(
         client, sender,
-        f"\u2705 Invoice {invoice_number} created & sent to {customer_name} "
-        f"({customer_phone}).\n\n"
+        f"\u2705 Invoice {invoice_number} sent to {customer_name} "
+        f"({sent_via}).\n\n"
         f"\u2022 {description}: {sym}{total:.2f} (inc. VAT)\n\n"
-        f"View or download the PDF from your dashboard.",
+        f"Session ended. Type /START for a new session.",
     )
+    _wizard_end_session(sender)
     logger.info(
-        "INVOICE: biz=%s customer=%s inv=%s total=%s",
-        business["id"], customer_phone, invoice_number, total,
+        "INVOICE: biz=%s customer=%s inv=%s total=%s channel=%s",
+        business["id"], customer_phone, invoice_number, total, channel,
     )
-
-
-# ──────────────────────────────────────────────
-# /QUOTE [Amount] [Description]
-# ──────────────────────────────────────────────
-async def _cmd_quote(
-    sender: str, args: str, business: dict[str, Any], client: httpx.AsyncClient
-) -> None:
-    """Create & send a quote.  Asks follow-up questions for missing info."""
-
-    # ── Must have an active customer first ──
-    customer_phone = business.get("active_customer_phone") or ""
-    if not customer_phone:
-        await send_text_message(
-            client, sender,
-            "\u26a0\ufe0f No active customer.\n\n"
-            "Use /SETUP <Name> <Phone> to add a customer first, "
-            "or /CHAT <Name> to select an existing one.",
-        )
-        return
-
-    amount, description = _parse_invoice_args(args)
-
-    if amount is None and not description:
-        _pending_commands[sender] = {
-            "cmd": "QUOTE",
-            "step": "need_amount",
-            "business_id": business["id"],
-            "customer_phone": customer_phone,
-        }
-        await send_text_message(
-            client, sender,
-            "\U0001f4dd *Let's create a quote.*\n\n"
-            "What is the *amount*? (e.g. 450)",
-        )
-        return
-
-    if amount is not None and not description:
-        _pending_commands[sender] = {
-            "cmd": "QUOTE",
-            "step": "need_description",
-            "amount": amount,
-            "business_id": business["id"],
-            "customer_phone": customer_phone,
-        }
-        await send_text_message(
-            client, sender,
-            f"\u2705 Amount: \u00a3{amount:.2f}\n\n"
-            f"What is this quote *for*? "
-            f"(e.g. Full bathroom refit, New boiler install)",
-        )
-        return
-
-    if amount is None and description:
-        _pending_commands[sender] = {
-            "cmd": "QUOTE",
-            "step": "need_amount",
-            "description": description,
-            "business_id": business["id"],
-            "customer_phone": customer_phone,
-        }
-        await send_text_message(
-            client, sender,
-            f"\u2705 Description: {description}\n\n"
-            f"What is the *amount*? (e.g. 450)",
-        )
-        return
-
-    await _finalise_quote(sender, amount, description, business, client)
-
-
-async def _resume_quote(
-    sender: str, text: str, pending: dict, business: dict[str, Any],
-    client: httpx.AsyncClient,
-) -> None:
-    """Resume an in-progress quote creation."""
-    step = pending.get("step")
-
-    if step == "need_amount":
-        m = re.search(r"[\u00a3$]?\s*([\d,]+(?:\.\d{1,2})?)", text)
-        if not m:
-            await send_text_message(
-                client, sender,
-                "\u26a0\ufe0f I didn't catch a number there.\n"
-                "Please enter the *amount* (e.g. 450).\n\n"
-                "Type *CANCEL* to cancel.",
-            )
-            return
-        try:
-            amount = float(m.group(1).replace(",", ""))
-        except ValueError:
-            await send_text_message(
-                client, sender,
-                "\u26a0\ufe0f That doesn't look like a valid amount.\n"
-                "Please enter a number (e.g. 450).\n\n"
-                "Type *CANCEL* to cancel.",
-            )
-            return
-
-        if amount <= 0:
-            await send_text_message(
-                client, sender,
-                "\u26a0\ufe0f The amount must be greater than zero.\n\n"
-                "Type *CANCEL* to cancel.",
-            )
-            return
-
-        description = pending.get("description", "")
-        if description:
-            _pending_commands.pop(sender, None)
-            await _finalise_quote(sender, amount, description, business, client)
-            return
-
-        pending["amount"] = amount
-        pending["step"] = "need_description"
-        await send_text_message(
-            client, sender,
-            f"\u2705 Amount: \u00a3{amount:.2f}\n\n"
-            f"What is this quote *for*? "
-            f"(e.g. Full bathroom refit, New boiler install)",
-        )
-        return
-
-    if step == "need_description":
-        description = text.strip()
-        if len(description) < 3:
-            await send_text_message(
-                client, sender,
-                "\u26a0\ufe0f Please provide a short description of the work "
-                "(at least a few words).\n\n"
-                "Type *CANCEL* to cancel.",
-            )
-            return
-
-        amount = pending.get("amount")
-        if amount is None:
-            pending["description"] = description
-            pending["step"] = "need_amount"
-            await send_text_message(
-                client, sender,
-                f"\u2705 Description: {description}\n\n"
-                f"What is the *amount*? (e.g. 450)",
-            )
-            return
-
-        _pending_commands.pop(sender, None)
-        await _finalise_quote(sender, amount, description, business, client)
-        return
-
-    _pending_commands.pop(sender, None)
 
 
 async def _finalise_quote(
@@ -1098,8 +1545,6 @@ async def _finalise_quote(
     total = round(subtotal + tax_amount, 2)
     currency = business.get("currency", "GBP")
 
-    # Valid for 30 days
-    from datetime import datetime, timezone, timedelta
     valid_until = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
 
     quo_result = supabase.table("quotes").insert({
@@ -1129,21 +1574,27 @@ async def _finalise_quote(
 
     sym = "\u00a3" if currency == "GBP" else "$" if currency == "USD" else f"{currency} "
 
-    # Build PDF link
     settings = get_settings()
     pdf_url = f"{settings.base_url}/member/business/{business['id']}/quotes/{quo['id']}/pdf"
 
-    # ── Check if confirm-before-send is enabled ──
+    # Get channel from wizard session
+    session = _wizard_sessions.get(sender, {})
+    channel = session.get("channel", "whatsapp")
+    customer_email = session.get("customer_email", "")
+    ch_label = _CHANNEL_LABELS.get(channel, "📱 WhatsApp")
+
+    # ── Always show preview with confirm/cancel ──
     if business.get("confirm_before_send"):
         preview_msg = (
-            f"\U0001f50d *Quote Preview — {quo_number}*\n"
-            f"To: {customer_name} ({customer_phone})\n\n"
+            f"\U0001f50d *Quote Preview \u2014 {quo_number}*\n"
+            f"To: {customer_name} ({customer_phone})\n"
+            f"📲 Sending via: {ch_label}\n\n"
             f"\u2022 {description}\n"
             f"\u2022 Subtotal: {sym}{subtotal:.2f}\n"
             f"\u2022 VAT ({tax_rate:.0f}%): {sym}{tax_amount:.2f}\n"
             f"\u2022 *Total: {sym}{total:.2f}*\n"
             f"\u2022 Valid until: {valid_until}\n\n"
-            f"\U0001f4e4 PDF: {pdf_url}\n\n"
+            f"\U0001f4ce PDF: {pdf_url}\n\n"
             f"Happy with this? Tap *Send* to deliver it to {first_name}, "
             f"or *Cancel* to discard."
         )
@@ -1157,56 +1608,84 @@ async def _finalise_quote(
         )
         return
 
-    # ── No confirmation needed — send straight away ──
+    # ── No confirmation — send straight away ──
     await _send_quote_to_customer(
         sender, quo, quote_number=quo_number, description=description,
         subtotal=subtotal, tax_rate=tax_rate, tax_amount=tax_amount,
-        total=total, sym=sym, pdf_url=pdf_url, valid_until=valid_until,
+        total=total, sym=sym, valid_until=valid_until,
         customer_name=customer_name, customer_phone=customer_phone,
         first_name=first_name, biz_name=biz_name,
         business=business, client=client,
+        channel=channel, customer_email=customer_email,
     )
 
 
 async def _send_quote_to_customer(
     sender: str, quo: dict, *, quote_number: str, description: str,
     subtotal: float, tax_rate: float, tax_amount: float, total: float,
-    sym: str, pdf_url: str, valid_until: str,
+    sym: str, valid_until: str,
     customer_name: str, customer_phone: str,
     first_name: str, biz_name: str,
     business: dict[str, Any], client: httpx.AsyncClient,
+    channel: str = "whatsapp", customer_email: str = "",
 ) -> None:
-    """Actually deliver the quote to the customer and confirm to the tradesperson."""
-
+    """Deliver the quote to the customer and confirm to the tradesperson."""
     supabase = get_supabase()
-
-    quote_msg = (
-        f"Hi {first_name}, here is a quote from {biz_name}:\n\n"
-        f"\U0001f4c4 *Quote {quote_number}*\n"
-        f"\u2022 {description}\n"
-        f"\u2022 Subtotal: {sym}{subtotal:.2f}\n"
-        f"\u2022 VAT ({tax_rate:.0f}%): {sym}{tax_amount:.2f}\n"
-        f"\u2022 *Total: {sym}{total:.2f}*\n"
-        f"\u2022 Valid until: {valid_until}\n\n"
-        f"\U0001f4e4 View/download PDF:\n{pdf_url}\n\n"
-        f"Reply to accept or ask any questions!"
-    )
-
+    settings = get_settings()
+    personal_phone = _format_phone_display(business.get("phone_number", ""))
     customer_raw = customer_phone.lstrip("+")
+    pdf_url = f"{settings.base_url}/member/business/{business['id']}/quotes/{quo['id']}/pdf"
+
+    ch_label = _CHANNEL_LABELS.get(channel, "WhatsApp")
+    sent_via = ""
+
     try:
-        await send_text_message(client, customer_raw, quote_msg)
+        if channel == "email" and customer_email:
+            subject, html_body, plain_body = build_quote_email(
+                customer_name=customer_name, first_name=first_name,
+                biz_name=biz_name, quote_number=quote_number,
+                description=description, subtotal=subtotal,
+                tax_rate=tax_rate, tax_amount=tax_amount,
+                total=total, sym=sym, valid_until=valid_until,
+                pdf_url=pdf_url, personal_phone=personal_phone,
+            )
+            await send_email(client, customer_email, subject, html_body, plain_body)
+            sent_via = f"via email to {customer_email}"
+        elif channel == "sms":
+            sms_body = build_quote_sms(
+                first_name=first_name, biz_name=biz_name,
+                quote_number=quote_number, description=description,
+                total=total, sym=sym, valid_until=valid_until,
+                pdf_url=pdf_url, personal_phone=personal_phone,
+            )
+            await send_sms(client, customer_phone, sms_body)
+            sent_via = f"via SMS to {customer_phone}"
+        else:
+            quote_msg = (
+                f"Hi {first_name}, here is a quote from {biz_name}:\n\n"
+                f"\U0001f4c4 *Quote {quote_number}*\n"
+                f"\u2022 {description}\n"
+                f"\u2022 Subtotal: {sym}{subtotal:.2f}\n"
+                f"\u2022 VAT ({tax_rate:.0f}%): {sym}{tax_amount:.2f}\n"
+                f"\u2022 *Total: {sym}{total:.2f}*\n"
+                f"\u2022 Valid until: {valid_until}\n\n"
+                f"\U0001f4ce Download PDF: {pdf_url}\n\n"
+                f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n"
+                f"\u26a0\ufe0f This is an automated message. Please do not reply here.\n"
+                f"To discuss this job, contact {biz_name} on *{personal_phone}*"
+            )
+            await send_text_message(client, customer_raw, quote_msg)
+            sent_via = f"via WhatsApp to {customer_phone}"
     except Exception:
-        logger.exception("Failed to send quote to %s", customer_phone)
+        logger.exception("Failed to send quote (%s) to %s", channel, customer_phone)
         await send_text_message(
             client, sender,
             f"\u2705 Quote {quote_number} created for {sym}{total:.2f}, "
-            f"but failed to send to {customer_name}. "
+            f"but failed to send to {customer_name} ({ch_label}). "
             f"You can send the PDF from your dashboard.",
         )
         return
 
-    # Mark sent timestamp & status
-    from datetime import datetime, timezone
     supabase.table("quotes").update({
         "status": "sent",
         "sent_at": datetime.now(timezone.utc).isoformat(),
@@ -1215,206 +1694,637 @@ async def _send_quote_to_customer(
     log_message(
         business_id=business["id"],
         to_phone=customer_phone,
-        message_body=quote_msg,
+        message_body=f"Quote {quote_number} sent {sent_via}",
         message_type="quote",
     )
 
     await send_text_message(
         client, sender,
-        f"\u2705 Quote {quote_number} created & sent to {customer_name} "
-        f"({customer_phone}).\n\n"
+        f"\u2705 Quote {quote_number} sent to {customer_name} "
+        f"({sent_via}).\n\n"
         f"\u2022 {description}: {sym}{total:.2f} (inc. VAT)\n"
         f"\u2022 Valid until {valid_until}\n\n"
-        f"View or download the PDF from your dashboard.",
+        f"Session ended. Type /START for a new session.",
     )
+    _wizard_end_session(sender)
     logger.info(
-        "QUOTE: biz=%s customer=%s quo=%s total=%s",
-        business["id"], customer_phone, quote_number, total,
+        "QUOTE: biz=%s customer=%s quo=%s total=%s channel=%s",
+        business["id"], customer_phone, quote_number, total, channel,
     )
 
 
 # ──────────────────────────────────────────────
-# /CHAT <Name or Phone>
+# View Expenses (WhatsApp summary)
 # ──────────────────────────────────────────────
-async def _cmd_chat(
-    sender: str, args: str, business: dict[str, Any], client: httpx.AsyncClient
+async def _wizard_view_expenses(
+    sender: str, session: dict, client: httpx.AsyncClient
 ) -> None:
-    """Switch the active customer for free-text chat."""
+    """Show a WhatsApp-friendly expense summary."""
     supabase = get_supabase()
+    expenses = (
+        supabase.table("expenses")
+        .select("*")
+        .eq("business_id", session["business_id"])
+        .order("date", desc=True)
+        .execute()
+    ).data or []
 
-    if not args:
+    if not expenses:
         await send_text_message(
             client, sender,
-            "Usage: /CHAT <Customer Name or Phone>\n"
-            "Example: /CHAT John  or  /CHAT 07845774563",
-        )
-        return
-
-    # Try to match by phone if the arg looks like a number
-    phone_digits = re.sub(r"\D", "", args)
-    if len(phone_digits) >= 7:
-        normalised = _normalise_phone(phone_digits)
-        cust_result = (
-            supabase.table("customers")
-            .select("name, phone_number")
-            .eq("business_id", business["id"])
-            .eq("phone_number", normalised)
-            .limit(1)
-            .execute()
+            "📊 *Expenses*\n\nNo expenses recorded yet.\n"
+            "Send a receipt photo after choosing 🧾 Record Expense.",
         )
     else:
-        # Match by name (case-insensitive)
-        all_custs = (
-            supabase.table("customers")
-            .select("name, phone_number")
-            .eq("business_id", business["id"])
-            .execute()
-        )
-        name_lower = args.lower()
-        matches = [
-            c for c in (all_custs.data or [])
-            if name_lower in c["name"].lower()
-        ]
-        cust_result = type(all_custs)(matches[:1], len(matches))
+        total = sum(float(e.get("total", 0)) for e in expenses)
+        tax = sum(float(e.get("tax_amount", 0)) for e in expenses)
 
-    if not cust_result.data:
+        # This month
+        now = datetime.now(timezone.utc)
+        month_key = now.strftime("%Y-%m")
+        month_total = sum(
+            float(e.get("total", 0)) for e in expenses
+            if (e.get("date", "") or "")[:7] == month_key
+        )
+
+        # Recent 5
+        recent = expenses[:5]
+        lines = []
+        for e in recent:
+            sym = "£" if e.get("currency", "GBP") == "GBP" else "$"
+            lines.append(
+                f"  • {e.get('date', '?')} — {e.get('vendor', '?')} — "
+                f"{sym}{float(e.get('total', 0)):.2f}"
+            )
+        recent_text = "\n".join(lines)
+
+        sym = "£"
         await send_text_message(
             client, sender,
-            "Customer not found. Use /SETUP to add them first.",
+            f"📊 *Expense Summary*\n\n"
+            f"💰 *Total Spent:* {sym}{total:.2f}\n"
+            f"🧾 *VAT (Reclaimable):* {sym}{tax:.2f}\n"
+            f"📅 *This Month:* {sym}{month_total:.2f}\n"
+            f"📋 *Receipts:* {len(expenses)}\n\n"
+            f"📝 *Recent Expenses:*\n{recent_text}\n\n"
+            f"View full details in your dashboard.",
         )
+
+    # Return to action menu
+    session["state"] = "choose_action"
+    await send_interactive_list(
+        client, sender,
+        "What would you like to do next?",
+        "Choose an option",
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+    )
+
+
+# ──────────────────────────────────────────────
+# View Calendar (WhatsApp summary)
+# ──────────────────────────────────────────────
+async def _wizard_view_bookings(
+    sender: str, session: dict, client: httpx.AsyncClient
+) -> None:
+    """Show a WhatsApp-friendly booking calendar summary."""
+    supabase = get_supabase()
+    bookings = (
+        supabase.table("bookings")
+        .select("*")
+        .eq("business_id", session["business_id"])
+        .order("date")
+        .execute()
+    ).data or []
+
+    if not bookings:
+        await send_text_message(
+            client, sender,
+            "🗓 *Your Calendar*\n\nNo bookings yet.\n"
+            "Tap 📅 New Booking to add your first job.",
+        )
+    else:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        upcoming = [
+            b for b in bookings
+            if (b.get("date", "") or "") >= today and b.get("status") != "cancelled"
+        ]
+        today_bks = [b for b in upcoming if b.get("date", "") == today]
+
+        # Next 7 upcoming
+        lines = []
+        for b in upcoming[:7]:
+            try:
+                from datetime import datetime as _dt
+                d = _dt.strptime(b["date"], "%Y-%m-%d")
+                day_str = d.strftime("%a %d %b")
+            except Exception:
+                day_str = b.get("date", "?")
+            time_str = b.get("time", "")
+            lines.append(
+                f"  • {day_str} {time_str} — {b.get('title', '?')}"
+                + (f" ({b.get('customer_name', '')})" if b.get("customer_name") else "")
+            )
+        upcoming_text = "\n".join(lines) if lines else "  None"
+
+        await send_text_message(
+            client, sender,
+            f"🗓 *Your Calendar*\n\n"
+            f"📋 *Total Bookings:* {len(bookings)}\n"
+            f"📅 *Today:* {len(today_bks)} job{'s' if len(today_bks) != 1 else ''}\n"
+            f"⏳ *Upcoming:* {len(upcoming)}\n\n"
+            f"📝 *Next Up:*\n{upcoming_text}\n\n"
+            f"View full calendar in your dashboard.",
+        )
+
+    # Return to action menu
+    session["state"] = "choose_action"
+    await send_interactive_list(
+        client, sender,
+        "What would you like to do next?",
+        "Choose an option",
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+    )
+
+
+# ──────────────────────────────────────────────
+# Booking wizard handler
+# ──────────────────────────────────────────────
+async def _wizard_booking_name_input(
+    sender: str, text: str, session: dict, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """Handle the customer name input for a booking when none was provided."""
+    partial = session.get("pending_booking_partial")
+    if not partial:
+        session["state"] = "awaiting_booking_details"
+        await send_text_message(client, sender, "⚠️ Something went wrong. Please enter the booking details again.")
         return
 
-    customer = cust_result.data[0]
-    supabase.table("businesses").update(
-        {"active_customer_phone": customer["phone_number"]}
-    ).eq("id", business["id"]).execute()
+    if text.strip().upper() == "SKIP":
+        customer_name = ""
+    else:
+        customer_name = text.strip()
+
+    session["customer_name"] = customer_name
+    session.pop("pending_booking_partial", None)
+
+    # Now continue the booking flow with the name resolved — rebuild as if we just parsed
+    session["pending_booking"] = {
+        "title": partial["title"],
+        "date": partial["date"],
+        "time": partial["time"],
+        "duration_mins": partial["duration_mins"],
+        "notes": partial["notes"],
+        "customer_id": session.get("customer_id") or None,
+        "customer_name": customer_name,
+        "customer_phone": session.get("customer_phone", ""),
+    }
+    session["state"] = "confirm_booking"
+
+    # ── Check for clashing bookings ──
+    clash_warning = ""
+    date = partial["date"]
+    time_ = partial["time"]
+    duration = partial["duration_mins"]
+    if date and time_:
+        try:
+            from datetime import datetime as _dt, timedelta as _td
+            new_start = _dt.strptime(f"{date} {time_}", "%Y-%m-%d %H:%M")
+            new_end = new_start + _td(minutes=duration)
+            supabase = get_supabase()
+            existing = (
+                supabase.table("bookings")
+                .select("title, date, time, duration_mins")
+                .eq("business_id", session["business_id"])
+                .eq("date", date)
+                .neq("status", "cancelled")
+                .execute()
+            )
+            for bk in (existing.data or []):
+                bk_start = _dt.strptime(f"{bk['date']} {bk['time']}", "%Y-%m-%d %H:%M")
+                bk_end = bk_start + _td(minutes=int(bk.get("duration_mins", 60)))
+                if new_start < bk_end and bk_start < new_end:
+                    clash_warning = (
+                        f"\n\n⚠️ *Clash detected!* This overlaps with:\n"
+                        f"📋 {bk['title']} — {bk['time']} ({bk.get('duration_mins', 60)} mins)"
+                    )
+                    break
+        except Exception:
+            logger.exception("Availability check failed for %s", sender)
+
+    # Format friendly date for preview
+    try:
+        from datetime import datetime as _dt
+        d = _dt.strptime(date, "%Y-%m-%d")
+        friendly_date = d.strftime("%A %d %B %Y")
+    except Exception:
+        friendly_date = date
+
+    customer_line = f"\n👤 *Customer:* {customer_name}" if customer_name else ""
+    notes_line = f"\n📝 *Notes:* {partial['notes']}" if partial["notes"] else ""
+
+    preview_msg = (
+        f"🔍 *Booking Preview*\n\n"
+        f"📋 *Job:* {partial['title']}\n"
+        f"📅 *Date:* {friendly_date}\n"
+        f"🕐 *Time:* {time_}\n"
+        f"⏱ *Duration:* {duration} mins"
+        f"{customer_line}{notes_line}"
+        f"{clash_warning}\n\n"
+        f"Is this correct? Tap *Confirm* to save or *Cancel* to re-enter."
+    )
+
+    await send_interactive_buttons(
+        client, sender, preview_msg,
+        [
+            {"type": "reply", "reply": {"id": "confirm_booking", "title": "✅ Confirm"}},
+            {"type": "reply", "reply": {"id": "cancel_booking", "title": "❌ Cancel"}},
+        ],
+    )
+
+
+async def _wizard_booking_input(
+    sender: str, text: str, session: dict, business: dict[str, Any],
+    client: httpx.AsyncClient,
+) -> None:
+    """Parse natural-language booking details via GPT and show preview for confirmation."""
 
     await send_text_message(
         client, sender,
-        f"\U0001f4ac Now chatting with {customer['name']} "
-        f"({customer['phone_number']}). Just type your message.",
+        "📅 *Got it!* Parsing your booking...",
     )
 
-
-# ──────────────────────────────────────────────
-# /HELP
-# ──────────────────────────────────────────────
-async def _cmd_login(sender: str, business: dict[str, Any], client: httpx.AsyncClient) -> None:
-    """Generate a one-time login code and send a direct login link."""
-    import secrets
-    from datetime import datetime, timezone, timedelta
-    from app.core.config import get_settings
-
-    supabase = get_supabase()
-    settings = get_settings()
-
-    code = f"{secrets.randbelow(900000) + 100000}"
-    expires = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
-
-    supabase.table("auth_codes").insert({
-        "phone": sender,
-        "code": code,
-        "expires_at": expires,
-    }).execute()
-
-    base = settings.base_url.rstrip("/")
-    login_url = f"{base}/login.html"
-
-    msg = (
-        f"\U0001f513 *Your login code is:* *{code}*\n\n"
-        f"\U0001f449 Open your dashboard:\n{login_url}\n\n"
-        f"Enter your phone number and this code to log in.\n"
-        f"Code expires in 5 minutes."
-    )
-    await send_text_message(client, sender, msg)
-
-
-async def _cmd_help(sender: str, question: str, client: httpx.AsyncClient) -> None:
-    if not question:
-        # No question — show quick command reference
-        help_text = (
-            "\U0001f4cb *Available Commands*\n\n"
-            "/SETUP <Name> <Phone>\n"
-            "  Add a new customer & send a welcome message\n\n"
-            "/REVIEW [Name Phone]\n"
-            "  Send a review request (active customer if no args)\n\n"
-            "/INVOICE [Amount] [Description]\n"
-            "  Create & send an invoice — I'll ask for any missing info\n\n"
-            "/QUOTE [Amount] [Description]\n"
-            "  Create & send a quote — same guided flow as invoices\n\n"
-            "/CHAT <Name or Phone>\n"
-            "  Switch your active chat to a different customer\n\n"
-            "/LOGIN\n"
-            "  Get a login code & link to your dashboard\n\n"
-            "/HELP <question>\n"
-            "  Ask the AI assistant anything about the app\n\n"
-            "\U0001f4ac Type any normal text to message your active customer.\n\n"
-            "\U0001f4a1 *Tip:* Try /HELP how do I send an invoice?"
-        )
-        await send_text_message(client, sender, help_text)
-        return
-
-    # Has a question — use AI to answer
-    from app.services.openai_service import answer_help_question
-
-    await send_text_message(client, sender, "\U0001f914 Let me look that up for you...")
-
     try:
-        answer = await answer_help_question(question)
-        await send_text_message(client, sender, f"\U0001f4a1 *Help*\n\n{answer}")
-    except Exception as exc:
-        logger.error("AI help failed: %s", exc)
-        await send_text_message(
-            client, sender,
-            "Sorry, I couldn't get an answer right now. Please try again or send /HELP for the command list.",
-        )
-
-
-# ──────────────────────────────────────────────
-# Chat relay: tradesperson → customer
-# ──────────────────────────────────────────────
-async def _relay_to_customer(
-    sender: str, text: str, business: dict[str, Any], client: httpx.AsyncClient
-) -> None:
-    """Wrap the tradesperson's message with their business name and forward."""
-    customer_phone = business.get("active_customer_phone") or ""
-    if not customer_phone:
-        await send_text_message(
-            client, sender,
-            "No active customer. Use /SETUP or /CHAT first.",
-        )
-        return
-
-    biz_name = business["business_name"]
-    wrapped = f"[{biz_name}]: {text}"
-
-    customer_raw = customer_phone.lstrip("+")
-    try:
-        await send_text_message(client, customer_raw, wrapped)
+        details = await parse_booking_details(text)
     except Exception:
-        logger.exception("Failed to relay message to %s", customer_phone)
+        logger.exception("Failed to parse booking from %s", sender)
         await send_text_message(
             client, sender,
-            "\u26a0\ufe0f Failed to deliver your message. The customer may "
-            "need to reply to this number first to open the chat window.",
+            "⚠️ Sorry, I couldn't understand that. Please try again.\n\n"
+            "Example: *Boiler service Tuesday 2pm*\n\n"
+            "Type *CANCEL* to go back.",
         )
         return
 
-    log_message(
-        business_id=business["id"],
-        to_phone=customer_phone,
-        message_body=wrapped,
-        message_type="chat",
+    title = details.get("title", text[:60])
+    date = details.get("date", "")
+    time_ = details.get("time", "09:00")
+    duration = int(details.get("duration_mins", 60))
+    notes = details.get("notes", "")
+    parsed_name = details.get("customer_name", "").strip()
+
+    # Use customer name from session (if set by earlier flow) or from GPT parse
+    customer_name = session.get("customer_name", "") or parsed_name
+
+    # If no customer name yet, ask for one
+    if not customer_name:
+        session["pending_booking_partial"] = {
+            "title": title, "date": date, "time": time_,
+            "duration_mins": duration, "notes": notes,
+        }
+        session["state"] = "awaiting_booking_name"
+        await send_text_message(
+            client, sender,
+            "👤 *Who is this booking for?*\n\n"
+            "Please type the customer's name.\n\n"
+            "Type *SKIP* to save without a name, or *CANCEL* to go back.",
+        )
+        return
+
+    # ── Check for clashing bookings ──
+    clash_warning = ""
+    if date and time_:
+        try:
+            from datetime import datetime as _dt, timedelta as _td
+            new_start = _dt.strptime(f"{date} {time_}", "%Y-%m-%d %H:%M")
+            new_end = new_start + _td(minutes=duration)
+
+            supabase = get_supabase()
+            existing = (
+                supabase.table("bookings")
+                .select("title, date, time, duration_mins")
+                .eq("business_id", session["business_id"])
+                .eq("date", date)
+                .neq("status", "cancelled")
+                .execute()
+            )
+            for bk in (existing.data or []):
+                bk_start = _dt.strptime(f"{bk['date']} {bk['time']}", "%Y-%m-%d %H:%M")
+                bk_end = bk_start + _td(minutes=int(bk.get("duration_mins", 60)))
+                if new_start < bk_end and bk_start < new_end:
+                    clash_warning = (
+                        f"\n\n⚠️ *Clash detected!* This overlaps with:\n"
+                        f"📋 {bk['title']} — {bk['time']} ({bk.get('duration_mins', 60)} mins)"
+                    )
+                    break
+        except Exception:
+            logger.exception("Availability check failed for %s", sender)
+
+    # Store parsed booking in session for confirmation
+    session["pending_booking"] = {
+        "title": title,
+        "date": date,
+        "time": time_,
+        "duration_mins": duration,
+        "notes": notes,
+        "customer_id": session.get("customer_id") or None,
+        "customer_name": customer_name,
+        "customer_phone": session.get("customer_phone", ""),
+    }
+    session["state"] = "confirm_booking"
+
+    # Format friendly date for preview
+    try:
+        from datetime import datetime as _dt
+        d = _dt.strptime(date, "%Y-%m-%d")
+        friendly_date = d.strftime("%A %d %B %Y")
+    except Exception:
+        friendly_date = date
+
+    customer_line = f"\n👤 *Customer:* {session.get('customer_name', '')}" if session.get("customer_name") else ""
+    notes_line = f"\n📝 *Notes:* {notes}" if notes else ""
+
+    preview_msg = (
+        f"🔍 *Booking Preview*\n\n"
+        f"📋 *Job:* {title}\n"
+        f"📅 *Date:* {friendly_date}\n"
+        f"🕐 *Time:* {time_}\n"
+        f"⏱ *Duration:* {duration} mins"
+        f"{customer_line}{notes_line}"
+        f"{clash_warning}\n\n"
+        f"Is this correct? Tap *Confirm* to save or *Cancel* to re-enter."
+    )
+
+    await send_interactive_buttons(client, sender, preview_msg, [
+        {"id": "confirmbk", "title": "✅ Confirm"},
+        {"id": "cancelbk", "title": "❌ Cancel"},
+    ])
+
+    logger.info(
+        "BOOKING PREVIEW: biz=%s title=%s date=%s time=%s",
+        session["business_id"], title, date, time_,
     )
 
 
 # ──────────────────────────────────────────────
-# Chat relay: customer → tradesperson
+# Booking confirm / cancel handlers
+# ──────────────────────────────────────────────
+async def _confirm_booking(sender: str, client: httpx.AsyncClient) -> None:
+    """Save the pending booking from the session to the database."""
+    import uuid as _uuid
+
+    session = _wizard_sessions.get(sender)
+    if not session or session.get("state") != "confirm_booking":
+        await send_text_message(client, sender, "⚠️ No pending booking to confirm.")
+        return
+
+    pb = session.get("pending_booking")
+    if not pb:
+        await send_text_message(client, sender, "⚠️ No pending booking found.")
+        return
+
+    try:
+        supabase = get_supabase()
+        now = datetime.now(timezone.utc).isoformat()
+        booking_id = str(_uuid.uuid4())
+
+        supabase.table("bookings").insert({
+            "id": booking_id,
+            "business_id": session["business_id"],
+            "customer_id": pb["customer_id"],
+            "customer_name": pb["customer_name"],
+            "customer_phone": pb["customer_phone"],
+            "title": pb["title"],
+            "date": pb["date"],
+            "time": pb["time"],
+            "duration_mins": pb["duration_mins"],
+            "notes": pb["notes"],
+            "status": "confirmed",
+            "created_at": now,
+            "updated_at": now,
+        }).execute()
+    except Exception:
+        logger.exception("Failed to save booking from %s", sender)
+        await send_text_message(
+            client, sender,
+            "⚠️ Booking failed to save. Please try again.\n\n"
+            "Type *CANCEL* to go back.",
+        )
+        session["state"] = "awaiting_booking_details"
+        return
+
+    # Format friendly date
+    try:
+        from datetime import datetime as _dt
+        d = _dt.strptime(pb["date"], "%Y-%m-%d")
+        friendly_date = d.strftime("%A %d %B %Y")
+    except Exception:
+        friendly_date = pb["date"]
+
+    customer_line = f"\n👤 *Customer:* {pb['customer_name']}" if pb["customer_name"] else ""
+    notes_line = f"\n📝 *Notes:* {pb['notes']}" if pb["notes"] else ""
+
+    await send_text_message(
+        client, sender,
+        f"✅ *Booking confirmed!*\n\n"
+        f"📋 *Job:* {pb['title']}\n"
+        f"📅 *Date:* {friendly_date}\n"
+        f"🕐 *Time:* {pb['time']}\n"
+        f"⏱ *Duration:* {pb['duration_mins']} mins"
+        f"{customer_line}{notes_line}\n\n"
+        f"View all bookings in your dashboard.",
+    )
+
+    # Clean up and return to action menu
+    session.pop("pending_booking", None)
+    session["state"] = "choose_action"
+    await send_interactive_list(
+        client, sender,
+        "What would you like to do next?",
+        "Choose an option",
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+    )
+
+    sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
+    log_message(
+        business_id=session["business_id"],
+        to_phone=sender_e164,
+        message_body=f"Booking created: {pb['title']} — {friendly_date} {pb['time']}",
+        message_type="booking",
+    )
+
+    logger.info(
+        "BOOKING CONFIRMED: biz=%s title=%s date=%s time=%s",
+        session["business_id"], pb["title"], pb["date"], pb["time"],
+    )
+
+
+async def _cancel_booking(sender: str, client: httpx.AsyncClient) -> None:
+    """Cancel the pending booking and return to booking input."""
+    session = _wizard_sessions.get(sender)
+    if session:
+        session.pop("pending_booking", None)
+        session["state"] = "awaiting_booking_details"
+
+    await send_text_message(
+        client, sender,
+        "❌ Booking cancelled. Please type the booking details again.\n\n"
+        "Example: *Boiler service 15th July 2pm*\n\n"
+        "Type *CANCEL* to go back to the menu.",
+    )
+
+
+# ──────────────────────────────────────────────
+# Image message handler — expense receipt scanning
+# ──────────────────────────────────────────────
+async def _handle_image(
+    sender: str, image_info: dict[str, Any], client: httpx.AsyncClient
+) -> None:
+    """Handle an incoming image — process as receipt if in expense wizard."""
+    import base64
+
+    # Check if user is in the expense wizard flow
+    session = _wizard_sessions.get(sender)
+    if not session or session.get("state") != "awaiting_receipt_photo":
+        await send_text_message(
+            client, sender,
+            "📸 To record an expense, type /START and choose *🧾 Record Expense* first.",
+        )
+        return
+
+    _start_timeout(sender, client)
+    supabase = get_supabase()
+
+    biz_result = (
+        supabase.table("businesses")
+        .select("*")
+        .eq("id", session["business_id"])
+        .execute()
+    )
+    if not biz_result.data:
+        _wizard_end_session(sender)
+        await send_text_message(
+            client, sender,
+            "⚠️ Business not found. Type /START to begin again.",
+        )
+        return
+
+    business = biz_result.data[0]
+    sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
+    media_id = image_info.get("id", "")
+    caption = image_info.get("caption", "").strip()
+
+    if not media_id:
+        await send_text_message(client, sender, "⚠️ Couldn't read that image. Please try again.")
+        return
+
+    await send_text_message(
+        client, sender,
+        "🧾 *Receipt received!* Scanning now...\n"
+        "This usually takes a few seconds.",
+    )
+
+    try:
+        # Download the image from WhatsApp
+        image_bytes, mime_type = await download_media(client, media_id)
+
+        # Convert to base64 data URL for OpenAI vision
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        data_url = f"data:{mime_type};base64,{b64}"
+
+        # Extract receipt data via GPT-4o vision
+        receipt = await extract_receipt_data(data_url)
+
+        vendor = receipt.get("vendor", "Unknown")
+        description = receipt.get("description", caption or "Receipt")
+        category = receipt.get("category", "general")
+        date = receipt.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        subtotal = float(receipt.get("subtotal", 0))
+        tax_amount = float(receipt.get("tax_amount", 0))
+        total = float(receipt.get("total", 0))
+        currency = receipt.get("currency", business.get("currency", "GBP"))
+
+        # If total is 0 but subtotal isn't, use subtotal
+        if total == 0 and subtotal > 0:
+            total = subtotal + tax_amount
+
+        # Store in DB (including the receipt image for later viewing)
+        import json as _json
+        supabase.table("expenses").insert({
+            "business_id": business["id"],
+            "vendor": vendor,
+            "description": description,
+            "category": category,
+            "date": date,
+            "subtotal": round(subtotal, 2),
+            "tax_amount": round(tax_amount, 2),
+            "total": round(total, 2),
+            "currency": currency,
+            "receipt_data": _json.dumps(receipt),
+            "receipt_image": data_url,
+        }).execute()
+
+        sym = "£" if currency == "GBP" else "$" if currency == "USD" else f"{currency} "
+        line_items = receipt.get("line_items", [])
+        items_text = ""
+        if line_items:
+            items_text = "\n".join(
+                f"  • {li.get('description', '?')} — {sym}{li.get('amount', 0):.2f}"
+                for li in line_items[:8]
+            )
+            items_text = f"\n\n📋 *Items:*\n{items_text}"
+
+        await send_text_message(
+            client, sender,
+            f"✅ *Expense recorded!*\n\n"
+            f"🏪 *Vendor:* {vendor}\n"
+            f"📝 *Description:* {description}\n"
+            f"📂 *Category:* {category}\n"
+            f"📅 *Date:* {date}\n"
+            f"💰 *Total:* {sym}{total:.2f}"
+            f"{f' (inc. {sym}{tax_amount:.2f} VAT)' if tax_amount > 0 else ''}"
+            f"{items_text}\n\n"
+            f"View all expenses in your dashboard.",
+        )
+
+        # Return to action menu
+        session["state"] = "choose_action"
+        await send_interactive_list(
+            client, sender,
+            "What would you like to do next?",
+            "Choose an option",
+            [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+        )
+
+        log_message(
+            business_id=business["id"],
+            to_phone=sender_e164,
+            message_body=f"Expense recorded: {vendor} — {sym}{total:.2f}",
+            message_type="expense",
+        )
+
+        logger.info(
+            "EXPENSE: biz=%s vendor=%s total=%s category=%s",
+            business["id"], vendor, total, category,
+        )
+
+    except Exception:
+        logger.exception("Failed to process receipt image from %s", sender)
+        await send_text_message(
+            client, sender,
+            "⚠️ Sorry, I couldn't read that receipt. "
+            "Please make sure the image is clear and try again.",
+        )
+        # Stay in awaiting_receipt_photo state so they can retry
+
+
+# ──────────────────────────────────────────────
+# Customer text handler (no chat relay — automated service only)
 # ──────────────────────────────────────────────
 async def _handle_customer_text(
     sender: str, sender_e164: str, text: str, client: httpx.AsyncClient
 ) -> None:
-    """Relay a customer's message back to their tradesperson."""
+    """Customer texted the bot — tell them to contact the tradesperson directly."""
     supabase = get_supabase()
 
     cust_result = (
@@ -1447,26 +2357,20 @@ async def _handle_customer_text(
         return
 
     biz = biz_result.data
-    owner_phone = biz["phone_number"].lstrip("+")
-    customer_name = customer.get("name", "Customer")
+    biz_name = biz.get("business_name", "your tradesperson")
+    personal_phone = _format_phone_display(biz.get("phone_number", ""))
 
-    # Relay to tradesperson with customer name prefix
-    relay_msg = f"\U0001f4ac {customer_name}: {text}"
-    await send_text_message(client, owner_phone, relay_msg)
-
-    log_message(
-        business_id=customer["business_id"],
-        to_phone=biz["phone_number"],
-        message_body=relay_msg,
-        message_type="chat_relay",
-        direction="inbound",
+    await send_text_message(
+        client, sender,
+        f"\U0001f44b This is an automated service for {biz_name}.\n\n"
+        f"To chat about your job, please contact them directly on:\n"
+        f"\U0001f4f1 *{personal_phone}*",
     )
 
-    # Auto-set this customer as active so the tradesperson can reply directly
-    supabase.table("businesses").update(
-        {"active_customer_phone": sender_e164}
-    ).eq("id", customer["business_id"]).execute()
 
+# ──────────────────────────────────────────────
+# Utility helpers
+# ──────────────────────────────────────────────
 
 def _normalise_phone(raw: str) -> str:
     """Normalise a raw phone input to E.164."""
@@ -1474,6 +2378,14 @@ def _normalise_phone(raw: str) -> str:
     if digits.startswith("0"):
         digits = "44" + digits[1:]
     return f"+{digits}"
+
+
+def _format_phone_display(e164: str) -> str:
+    """Format E.164 phone for display (UK-focused)."""
+    if e164.startswith("+44") and len(e164) == 13:
+        local = "0" + e164[3:]
+        return f"{local[:5]} {local[5:]}"
+    return e164
 
 
 async def _post_edited_reply(
@@ -1530,6 +2442,10 @@ async def _confirm_send_invoice(
 ) -> None:
     """User tapped Send on an invoice preview — deliver it now."""
     supabase = get_supabase()
+    session = _wizard_sessions.get(sender, {})
+    channel = session.get("channel", "whatsapp")
+    customer_email = session.get("customer_email", "")
+
     inv_result = supabase.table("invoices").select("*").eq("id", inv_id).execute()
     if not inv_result.data:
         await send_text_message(client, sender, "Invoice not found.")
@@ -1540,28 +2456,29 @@ async def _confirm_send_invoice(
     business = biz_result.data[0] if biz_result.data else {}
 
     cust_result = (
-        supabase.table("customers").select("id, name, phone_number")
+        supabase.table("customers").select("id, name, phone_number, email")
         .eq("id", inv["customer_id"]).execute()
     )
     customer = cust_result.data[0] if cust_result.data else None
     customer_name = customer["name"] if customer else "there"
     customer_phone = customer["phone_number"] if customer else ""
     first_name = customer_name.split()[0]
+    if not customer_email and customer:
+        customer_email = customer.get("email", "")
 
     currency = inv.get("currency", "GBP")
     sym = "\u00a3" if currency == "GBP" else "$" if currency == "USD" else f"{currency} "
-    settings = get_settings()
-    pdf_url = f"{settings.base_url}/member/business/{inv['business_id']}/invoices/{inv_id}/pdf"
 
     await _send_invoice_to_customer(
         sender, inv, invoice_number=inv["invoice_number"],
         description=inv.get("notes", ""),
         subtotal=inv["subtotal"], tax_rate=inv["tax_rate"],
         tax_amount=inv["tax_amount"], total=inv["total"],
-        sym=sym, pdf_url=pdf_url,
+        sym=sym,
         customer_name=customer_name, customer_phone=customer_phone,
         first_name=first_name, biz_name=business.get("business_name", ""),
         business=business, client=client,
+        channel=channel, customer_email=customer_email,
     )
 
 
@@ -1574,9 +2491,10 @@ async def _cancel_invoice(
     inv_number = inv_result.data[0]["invoice_number"] if inv_result.data else "?"
     supabase.table("line_items").delete().eq("parent_id", inv_id).eq("parent_type", "invoice").execute()
     supabase.table("invoices").delete().eq("id", inv_id).execute()
+    _wizard_end_session(sender)
     await send_text_message(
         client, sender,
-        f"\u274c Invoice {inv_number} has been cancelled and deleted.",
+        f"\u274c Invoice {inv_number} cancelled.\n\nType /START for a new session.",
     )
 
 
@@ -1585,6 +2503,10 @@ async def _confirm_send_quote(
 ) -> None:
     """User tapped Send on a quote preview — deliver it now."""
     supabase = get_supabase()
+    session = _wizard_sessions.get(sender, {})
+    channel = session.get("channel", "whatsapp")
+    customer_email = session.get("customer_email", "")
+
     quo_result = supabase.table("quotes").select("*").eq("id", quo_id).execute()
     if not quo_result.data:
         await send_text_message(client, sender, "Quote not found.")
@@ -1595,29 +2517,30 @@ async def _confirm_send_quote(
     business = biz_result.data[0] if biz_result.data else {}
 
     cust_result = (
-        supabase.table("customers").select("id, name, phone_number")
+        supabase.table("customers").select("id, name, phone_number, email")
         .eq("id", quo["customer_id"]).execute()
     )
     customer = cust_result.data[0] if cust_result.data else None
     customer_name = customer["name"] if customer else "there"
     customer_phone = customer["phone_number"] if customer else ""
     first_name = customer_name.split()[0]
+    if not customer_email and customer:
+        customer_email = customer.get("email", "")
 
     currency = quo.get("currency", "GBP")
     sym = "\u00a3" if currency == "GBP" else "$" if currency == "USD" else f"{currency} "
-    settings = get_settings()
-    pdf_url = f"{settings.base_url}/member/business/{quo['business_id']}/quotes/{quo_id}/pdf"
 
     await _send_quote_to_customer(
         sender, quo, quote_number=quo["quote_number"],
         description=quo.get("notes", ""),
         subtotal=quo["subtotal"], tax_rate=quo["tax_rate"],
         tax_amount=quo["tax_amount"], total=quo["total"],
-        sym=sym, pdf_url=pdf_url,
+        sym=sym,
         valid_until=quo.get("valid_until", ""),
         customer_name=customer_name, customer_phone=customer_phone,
         first_name=first_name, biz_name=business.get("business_name", ""),
         business=business, client=client,
+        channel=channel, customer_email=customer_email,
     )
 
 
@@ -1630,9 +2553,10 @@ async def _cancel_quote(
     quo_number = quo_result.data[0]["quote_number"] if quo_result.data else "?"
     supabase.table("line_items").delete().eq("parent_id", quo_id).eq("parent_type", "quote").execute()
     supabase.table("quotes").delete().eq("id", quo_id).execute()
+    _wizard_end_session(sender)
     await send_text_message(
         client, sender,
-        f"\u274c Quote {quo_number} has been cancelled and deleted.",
+        f"\u274c Quote {quo_number} cancelled.\n\nType /START for a new session.",
     )
 
 
@@ -1647,6 +2571,11 @@ async def _handle_button(
         if await _handle_demo_button(sender, payload, client):
             return
 
+    # ── Wizard flow buttons ──
+    if payload.startswith("wiz_"):
+        if await _wizard_handle_button(sender, payload, client):
+            return
+
     supabase = get_supabase()
     sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
 
@@ -1658,6 +2587,14 @@ async def _handle_button(
     if payload.startswith("cancelinv_"):
         inv_id = payload.removeprefix("cancelinv_")
         await _cancel_invoice(sender, inv_id, client)
+        return
+
+    # ── Confirm / cancel booking ──
+    if payload == "confirmbk":
+        await _confirm_booking(sender, client)
+        return
+    if payload == "cancelbk":
+        await _cancel_booking(sender, client)
         return
 
     # ── Confirm / cancel quote ──
@@ -1697,25 +2634,6 @@ async def _handle_button(
     # ── 4. "could_be_better" — customer had a bad experience ──
     if payload == "could_be_better":
         await _handle_could_be_better(sender, sender_e164, client)
-        return
-
-    # ── 5. "yes_offers" — customer opts in to marketing ──
-    if payload == "yes_offers":
-        supabase.table("customers").update({"marketing_opt_in": 1}).eq(
-            "phone_number", sender_e164
-        ).execute()
-        await send_text_message(
-            client, sender,
-            "Great, you're signed up! 🎉 We'll only send you the best offers. Reply STOP anytime to unsubscribe.",
-        )
-        return
-
-    # ── 6. "no_offers" — customer declines marketing ──
-    if payload == "no_offers":
-        await send_text_message(
-            client, sender,
-            "No problem at all! You won't receive any marketing messages from us.",
-        )
         return
 
     # ── Fallback: reject ──
@@ -1842,18 +2760,6 @@ async def _handle_great(
         {"status": "clicked_great", "review_link_sent": True}
     ).eq("id", customer["id"]).execute()
 
-    # Ask customer if they want to receive special offers
-    biz_name = biz.get("business_name", "us") if biz else "us"
-    await send_interactive_buttons(
-        client,
-        sender,
-        f"Would you like to receive occasional special offers from {biz_name}? You can opt out anytime by replying STOP.",
-        [
-            {"id": "yes_offers", "title": "Yes please!"},
-            {"id": "no_offers", "title": "No thanks"},
-        ],
-    )
-
 
 async def _handle_could_be_better(
     sender: str, sender_e164: str, client: httpx.AsyncClient
@@ -1897,7 +2803,7 @@ async def _handle_could_be_better(
         customer_name = customer.get("name", "A customer")
         customer_phone = customer.get("phone_number", "unknown")
         alert_body = (
-            f"⚠️ {customer_name} ({customer_phone}) had a bad experience. "
+            f"\u26a0\ufe0f {customer_name} ({customer_phone}) had a bad experience. "
             f"Reach out to them ASAP."
         )
         await send_text_message(client, owner_phone, alert_body)

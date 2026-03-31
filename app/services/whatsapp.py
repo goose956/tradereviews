@@ -9,7 +9,7 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-META_GRAPH_URL = "https://graph.facebook.com/v21.0"
+META_GRAPH_URL = "https://graph.facebook.com/v22.0"
 
 
 def _headers() -> dict[str, str]:
@@ -154,6 +154,38 @@ async def upload_media(
     return media_id
 
 
+async def send_interactive_list(
+    client: httpx.AsyncClient,
+    to_phone: str,
+    body_text: str,
+    button_text: str,
+    sections: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Send an interactive list message (for selecting from many options).
+
+    Each section: {"title": "…", "rows": [{"id": "…", "title": "…", "description": "…"}, …]}
+    """
+    payload: dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "body": {"text": body_text},
+            "action": {
+                "button": button_text,
+                "sections": sections,
+            },
+        },
+    }
+
+    response = await client.post(_messages_url(), headers=_headers(), json=payload)
+    response.raise_for_status()
+    data: dict[str, Any] = response.json()
+    logger.info("List msg sent to %s", to_phone)
+    return data
+
+
 async def send_document_message(
     client: httpx.AsyncClient,
     to_phone: str,
@@ -178,3 +210,21 @@ async def send_document_message(
     data: dict[str, Any] = response.json()
     logger.info("Document sent to %s — filename: %s", to_phone, filename)
     return data
+
+
+async def download_media(client: httpx.AsyncClient, media_id: str) -> tuple[bytes, str]:
+    """Download media from WhatsApp by media ID. Returns (file_bytes, mime_type)."""
+    settings = get_settings()
+    headers = {"Authorization": f"Bearer {settings.whatsapp_token}"}
+
+    # Step 1: Get the media URL
+    meta_resp = await client.get(f"{META_GRAPH_URL}/{media_id}", headers=headers)
+    meta_resp.raise_for_status()
+    media_url = meta_resp.json().get("url", "")
+    mime_type = meta_resp.json().get("mime_type", "image/jpeg")
+
+    # Step 2: Download the actual file
+    file_resp = await client.get(media_url, headers=headers)
+    file_resp.raise_for_status()
+    logger.info("Media downloaded — id: %s, mime: %s, size: %d bytes", media_id, mime_type, len(file_resp.content))
+    return file_resp.content, mime_type

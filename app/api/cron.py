@@ -1,20 +1,77 @@
 """Cron-triggered endpoints for periodic background jobs."""
 
+import hmac
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Header, HTTPException, Depends
 
+from app.core.config import get_settings
 from app.core.security import decrypt
 from app.db.supabase import get_supabase
-from app.services.google import get_reviews, post_review_reply, refresh_access_token
+from app.services.google import (
+    get_reviews,
+    get_reviews_by_place_id,
+    post_review_reply,
+    refresh_access_token,
+)
 from app.services.message_log import log_message
 from app.services.openai_service import generate_reply
 from app.services.whatsapp import send_interactive_buttons, send_text_message
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/cron", tags=["cron"])
+
+
+def _match_review_to_customer(
+    supabase: Any,
+    business_id: str,
+    reviewer_name: str,
+) -> None:
+    """Try to match a Google review back to a customer we sent a request to.
+
+    If matched, mark the customer as 'review_posted' so follow-ups stop.
+    Matching is name-based (case-insensitive substring).
+    """
+    if not reviewer_name or reviewer_name == "A customer":
+        return
+
+    name_lower = reviewer_name.strip().lower()
+
+    candidates = (
+        supabase.table("customers")
+        .select("id, name, status")
+        .eq("business_id", business_id)
+        .neq("status", "review_posted")
+        .execute()
+    )
+    for cust in candidates.data or []:
+        cust_name = (cust.get("name") or "").strip().lower()
+        if not cust_name:
+            continue
+        # Match if either name contains the other (handles "John" vs "John Smith")
+        if cust_name in name_lower or name_lower in cust_name:
+            supabase.table("customers").update(
+                {"status": "review_posted"}
+            ).eq("id", cust["id"]).execute()
+            logger.info(
+                "Matched review from '%s' to customer %s (business %s) — marked review_posted",
+                reviewer_name, cust["id"], business_id,
+            )
+            return
+
+
+async def _require_cron_secret(x_admin_key: str = Header(default="")) -> None:
+    """Protect cron endpoints with the same admin secret."""
+    secret = get_settings().admin_secret
+    if not secret or not hmac.compare_digest(x_admin_key, secret):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+router = APIRouter(
+    prefix="/cron", tags=["cron"],
+    dependencies=[Depends(_require_cron_secret)],
+)
 
 _STAR_MAP: dict[str, int] = {
     "ONE": 1,
@@ -33,28 +90,39 @@ def _star_to_int(star_rating: str) -> int:
 async def poll_reviews(request: Request) -> dict[str, Any]:
     """Poll Google reviews for every active business and generate AI drafts.
 
-    Intended to be called by an external cron scheduler (e.g. cron-job.org,
-    Supabase Edge Function cron, GitHub Actions, etc.).
+    Supports two modes:
+    - Full OAuth (google_refresh_token set): can auto-reply
+    - API-key only (google_place_id set, no OAuth): notification only
     """
     supabase = get_supabase()
     http_client = request.app.state.http_client
 
-    # Only process businesses with Google connected and an active subscription.
+    # All active businesses that have some form of Google connection
     result = (
         supabase.table("businesses")
         .select("*")
         .eq("subscription_status", "active")
-        .neq("google_refresh_token", None)
         .execute()
     )
-    businesses = result.data or []
+    businesses = [
+        b for b in (result.data or [])
+        if b.get("google_refresh_token") or b.get("google_place_id")
+    ]
 
     total_new = 0
     errors = 0
 
     for business in businesses:
         try:
-            new = await _process_business(business, http_client)
+            has_oauth = bool(
+                business.get("google_refresh_token")
+                and business.get("google_account_id")
+                and business.get("google_location_id")
+            )
+            if has_oauth:
+                new = await _process_business(business, http_client)
+            else:
+                new = await _process_business_places(business, http_client)
             total_new += new
         except Exception:
             errors += 1
@@ -206,6 +274,9 @@ async def _process_business(
                 message_type="auto_reply_notification",
             )
 
+            # Match review back to a customer record
+            _match_review_to_customer(supabase, business["id"], reviewer_name)
+
             new_count += 1
             logger.info(
                 "Auto-replied to review %s (business %s, status=%s)",
@@ -256,6 +327,9 @@ async def _process_business(
             message_type="draft_notification",
         )
 
+        # Match review back to a customer record
+        _match_review_to_customer(supabase, business["id"], reviewer_name)
+
         new_count += 1
         logger.info(
             "Draft %s created for review %s (business %s)",
@@ -267,111 +341,181 @@ async def _process_business(
     return new_count
 
 
-# ──────────────────────────────────────────────
-# Follow-up reminders
-# ──────────────────────────────────────────────
+async def _process_business_places(
+    business: dict[str, Any],
+    http_client: Any,
+) -> int:
+    """Fetch reviews via Places API (API-key only) and notify the owner.
+
+    No auto-reply — owner must reply manually on Google.
+    We still generate AI draft suggestions they can copy.
+    """
+    supabase = get_supabase()
+    place_id = business.get("google_place_id", "")
+    if not place_id:
+        return 0
+
+    reviews = await get_reviews_by_place_id(place_id)
+    review_link = business.get("google_review_link", "")
+    new_count = 0
+
+    for review in reviews:
+        # Build a stable ID from author + rating + first 100 chars of text
+        author = review.get("author_name", "A customer")
+        text = review.get("text", "")
+        rating = review.get("rating", 5)
+        review_key = f"places_{place_id}_{author}_{rating}_{text[:100]}"
+
+        # Skip already-processed
+        existing = (
+            supabase.table("review_drafts")
+            .select("id")
+            .eq("google_review_id", review_key)
+            .execute()
+        )
+        if existing.data:
+            continue
+
+        # Generate AI draft reply (they can copy-paste it)
+        draft_text = await generate_reply(
+            business_name=business["business_name"],
+            review_text=text,
+            star_rating=rating,
+        )
+
+        # Save draft
+        insert_result = (
+            supabase.table("review_drafts")
+            .insert({
+                "business_id": business["id"],
+                "google_review_id": review_key,
+                "reviewer_name": author,
+                "review_text": text,
+                "star_rating": rating,
+                "ai_draft_reply": draft_text,
+                "status": "pending_approval",
+                "sent_to_owner": True,
+            })
+            .execute()
+        )
+        draft_id = insert_result.data[0]["id"] if insert_result.data else "unknown"
+
+        # Notify owner via WhatsApp
+        owner_phone = business["phone_number"].lstrip("+")
+        body = (
+            f"⭐ New {rating}-star review from {author}:\n\n"
+            f'"{text[:500]}"\n\n'
+            f"💡 Suggested reply:\n"
+            f'"{draft_text}"\n\n'
+        )
+        if review_link:
+            body += f"👉 Reply on Google: {review_link}"
+
+        await send_text_message(http_client, owner_phone, body)
+
+        log_message(
+            business_id=business["id"],
+            to_phone=business["phone_number"],
+            message_body=f"New {rating}-star review from {author} — suggested reply sent",
+            message_type="draft_notification",
+        )
+
+        # Match review to customer record
+        _match_review_to_customer(supabase, business["id"], author)
+
+        new_count += 1
+        logger.info(
+            "Places API draft %s for review by '%s' (business %s)",
+            draft_id, author, business["id"],
+        )
+
+    return new_count
+
+
+# ── Follow-up reminders ───────────────────────────────────────────
 @router.post("/send-follow-ups")
 async def send_follow_ups(request: Request) -> dict[str, Any]:
-    """Send follow-up review requests to customers who haven't responded.
+    """Send follow-up reminders to customers who haven't posted a review yet.
 
-    Checks each business's follow_up_enabled / follow_up_days / max_follow_ups
-    settings.  Intended to be called once daily by an external cron scheduler.
+    Intended to be called on the same cron schedule as poll-reviews.
     """
-    db = get_supabase()
+    supabase = get_supabase()
     http_client = request.app.state.http_client
+    now = datetime.now(timezone.utc)
 
-    # Get businesses that have follow-ups enabled
-    biz_result = (
-        db.table("businesses")
+    businesses = (
+        supabase.table("businesses")
         .select("*")
         .eq("subscription_status", "active")
-        .eq("follow_up_enabled", 1)
+        .eq("followup_enabled", 1)
         .execute()
     )
-    businesses = biz_result.data or []
 
-    sent = 0
+    total_sent = 0
     errors = 0
 
-    for biz in businesses:
-        follow_up_days = biz.get("follow_up_days", 3)
-        max_follow_ups = biz.get("max_follow_ups", 2)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=follow_up_days)).isoformat()
+    for biz in businesses.data or []:
+        interval_days = biz.get("followup_interval_days", 3)
+        max_count = biz.get("followup_max_count", 2)
+        message_tpl = biz.get("followup_message") or (
+            "Hi {first_name}, just a quick reminder — we'd really appreciate "
+            "your feedback! It only takes a minute. Thank you 😊"
+        )
+        review_link = biz.get("google_review_link", "")
 
-        # Find customers who:
-        #   - belong to this business
-        #   - status is request_sent or follow_up_sent (haven't responded)
-        #   - were requested (or last followed up) more than N days ago
-        #   - haven't exceeded max follow-ups
-        for status in ("request_sent", "follow_up_sent"):
-            customers = (
-                db.table("customers")
-                .select("*")
-                .eq("business_id", biz["id"])
-                .eq("status", status)
-                .execute()
-            ).data or []
+        # Find customers eligible for a follow-up
+        candidates = (
+            supabase.table("customers")
+            .select("id, name, phone_number, review_requested_at, followup_count, last_followup_at")
+            .eq("business_id", biz["id"])
+            .neq("status", "review_posted")
+            .execute()
+        )
 
-            for cust in customers:
-                follow_up_count = cust.get("follow_up_count", 0)
-                if follow_up_count >= max_follow_ups:
-                    continue
+        for cust in candidates.data or []:
+            followup_count = cust.get("followup_count", 0)
+            if followup_count >= max_count:
+                continue
 
-                # Check if enough time has passed
-                last_contact = cust.get("last_follow_up_at") or cust.get("review_requested_at")
-                if not last_contact or last_contact > cutoff:
-                    continue
+            # Determine the reference date for when the next follow-up is due
+            last_contact = cust.get("last_followup_at") or cust.get("review_requested_at")
+            if not last_contact:
+                continue
 
-                try:
-                    first_name = cust["name"].split()[0]
-                    # Pick the right message for this follow-up number
-                    if follow_up_count == 0:
-                        template = biz.get("follow_up_message") or (
-                            "Hi {first_name}, just a friendly reminder from "
-                            "{business_name} — we'd really appreciate "
-                            "your feedback! It only takes 30 seconds. 😊"
-                        )
-                    elif follow_up_count == 1:
-                        template = biz.get("follow_up_message_2") or (
-                            "Hi {first_name}, we don't want to be a pest! "
-                            "But if you have a spare moment, {business_name} "
-                            "would love to hear how we did. Thank you! 🙏"
-                        )
-                    else:
-                        template = biz.get("follow_up_message_3") or (
-                            "Hi {first_name}, last reminder from {business_name} "
-                            "— your feedback really helps us improve. "
-                            "We'd be grateful if you could share your experience. Thanks! ⭐"
-                        )
-                    follow_up_body = template.format(
-                        first_name=first_name,
-                        business_name=biz["business_name"],
-                    )
-                    await send_text_message(
-                        http_client,
-                        cust["phone_number"].lstrip("+"),
-                        follow_up_body,
-                    )
+            try:
+                last_dt = datetime.fromisoformat(last_contact.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                continue
 
-                    log_message(
-                        business_id=biz["id"],
-                        to_phone=cust["phone_number"],
-                        message_body=follow_up_body,
-                        message_type="follow_up",
-                    )
+            if (now - last_dt) < timedelta(days=interval_days):
+                continue
 
-                    db.table("customers").update({
-                        "follow_up_count": follow_up_count + 1,
-                        "last_follow_up_at": datetime.now(timezone.utc).isoformat(),
-                        "status": "follow_up_sent",
-                    }).eq("id", cust["id"]).execute()
+            # Build the follow-up message
+            first_name = (cust.get("name") or "there").split()[0]
+            body = message_tpl.format(first_name=first_name)
+            if review_link:
+                body += f"\n\n{review_link}"
 
-                    sent += 1
-                except Exception:
-                    errors += 1
-                    logger.exception(
-                        "Failed to send follow-up to customer %s", cust["id"]
-                    )
+            phone = cust["phone_number"].lstrip("+")
+            try:
+                await send_text_message(http_client, phone, body)
+                supabase.table("customers").update({
+                    "followup_count": followup_count + 1,
+                    "last_followup_at": now.isoformat(),
+                }).eq("id", cust["id"]).execute()
 
-    logger.info("Follow-ups complete — %d sent, %d errors", sent, errors)
-    return {"follow_ups_sent": sent, "errors": errors}
+                log_message(
+                    business_id=biz["id"],
+                    to_phone=cust["phone_number"],
+                    message_body=f"Follow-up #{followup_count + 1} sent",
+                    message_type="review_followup",
+                )
+                total_sent += 1
+            except Exception:
+                errors += 1
+                logger.exception(
+                    "Failed to send follow-up to customer %s", cust["id"]
+                )
+
+    logger.info("Follow-ups complete — %d sent, %d errors", total_sent, errors)
+    return {"followups_sent": total_sent, "errors": errors}
