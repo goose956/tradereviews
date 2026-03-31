@@ -9,12 +9,17 @@ from __future__ import annotations
 import re as _re
 import sqlite3
 import uuid
+import os
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-DB_PATH = Path(__file__).resolve().parent.parent.parent / "local.db"
+_volume = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+if _volume:
+    DB_PATH = Path(_volume) / "local.db"
+else:
+    DB_PATH = Path(__file__).resolve().parent.parent.parent / "local.db"
 
 # ── Schema bootstrap ─────────────────────────────────────────────
 
