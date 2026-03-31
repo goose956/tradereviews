@@ -320,6 +320,11 @@
 
 <script>
 const API = '/admin';
+let ADMIN_KEY = sessionStorage.getItem('admin_key') || '';
+if (!ADMIN_KEY) {
+  ADMIN_KEY = prompt('Enter admin secret:');
+  if (ADMIN_KEY) sessionStorage.setItem('admin_key', ADMIN_KEY);
+}
 
 // ── Helpers ─────────────────────────────────
 function esc(s) {
@@ -335,9 +340,15 @@ function truncate(s, n) { return s && s.length > n ? esc(s.slice(0,n)) + '…' :
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY, ...opts.headers },
     ...opts,
   });
+  if (res.status === 403) {
+    sessionStorage.removeItem('admin_key');
+    ADMIN_KEY = prompt('Invalid secret. Enter admin secret:');
+    if (ADMIN_KEY) { sessionStorage.setItem('admin_key', ADMIN_KEY); return api(path, opts); }
+    throw new Error('Not authenticated');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || res.statusText);
