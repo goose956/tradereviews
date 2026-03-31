@@ -6,9 +6,9 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # WhatsApp (Meta)
-    whatsapp_token: str
-    whatsapp_phone_number_id: str
-    whatsapp_verify_token: str
+    whatsapp_token: str = ""
+    whatsapp_phone_number_id: str = ""
+    whatsapp_verify_token: str = ""
 
     # Google OAuth
     google_client_id: str = ""
