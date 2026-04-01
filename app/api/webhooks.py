@@ -141,12 +141,12 @@ def _seed_demo_data(supabase: Any, biz_id: str, cust_id: str) -> None:
             "total": 420.00,
             "currency": "GBP",
             "payment_terms": "Payment due within 14 days",
-            "notes": "Boiler service and repair",
+            "notes": "Annual boiler service and safety check",
             "paid_at": (now - timedelta(days=3)).isoformat(),
         }).execute()
         supabase.table("line_items").insert({
             "parent_id": inv1_id, "parent_type": "invoice",
-            "description": "Boiler service and repair",
+            "description": "Annual boiler service and safety check",
             "quantity": 1, "unit_price": 350.00, "total": 350.00, "sort_order": 0,
         }).execute()
 
@@ -189,11 +189,11 @@ def _seed_demo_data(supabase: Any, biz_id: str, cust_id: str) -> None:
             "total": 1440.00,
             "currency": "GBP",
             "valid_until": (now + timedelta(days=30)).strftime("%Y-%m-%d"),
-            "notes": "Full bathroom refit — supply and install",
+            "notes": "Full bathroom refit — supply and install all pipework, basin, toilet and shower",
         }).execute()
         supabase.table("line_items").insert({
             "parent_id": quo_id, "parent_type": "quote",
-            "description": "Full bathroom refit — supply and install",
+            "description": "Full bathroom refit — supply and install all pipework, basin, toilet and shower",
             "quantity": 1, "unit_price": 1200.00, "total": 1200.00, "sort_order": 0,
         }).execute()
 
@@ -202,8 +202,8 @@ def _seed_demo_data(supabase: Any, biz_id: str, cust_id: str) -> None:
         "business_id", biz_id).limit(1).execute()
     if not has_exp.data:
         for vendor, desc, cat, amount, days_ago in [
-            ("Screwfix", "Copper pipe fittings and solder", "materials", 47.85, 5),
-            ("Toolstation", "Replacement thermostatic valve", "materials", 28.50, 3),
+            ("Screwfix", "22mm copper pipe and compression fittings", "materials", 47.85, 5),
+            ("Toolstation", "Thermostatic radiator valve x2", "materials", 28.50, 3),
             ("Shell Garage", "Diesel — van", "fuel", 65.00, 1),
         ]:
             exp_id = str(_uuid.uuid4())
@@ -226,9 +226,9 @@ def _seed_demo_data(supabase: Any, biz_id: str, cust_id: str) -> None:
         "business_id", biz_id).limit(1).execute()
     if not has_bk.data:
         for title, cname, days_offset, time_str in [
-            ("Boiler service", "John Smith", -2, "09:00"),
-            ("Radiator install", "John Smith", 2, "10:00"),
-            ("Emergency leak repair", "John Smith", 5, "14:30"),
+            ("Boiler service — annual check", "John Smith", -2, "09:00"),
+            ("Radiator install — front bedroom", "John Smith", 2, "10:00"),
+            ("Emergency leak repair — kitchen", "John Smith", 5, "14:30"),
         ]:
             bk_id = str(_uuid.uuid4())
             supabase.table("bookings").insert({
@@ -244,6 +244,21 @@ def _seed_demo_data(supabase: Any, biz_id: str, cust_id: str) -> None:
                 "notes": "",
                 "status": "confirmed",
             }).execute()
+
+
+def _demo_cleanup(sender: str) -> None:
+    """Pop demo session and restore original business name if needed."""
+    demo = _demo_sessions.pop(sender, None)
+    if not demo:
+        return
+    orig_name = demo.get("original_biz_name")
+    orig_trade = demo.get("original_trade")
+    biz_id = demo.get("business_id")
+    if orig_name and biz_id:
+        updates: dict = {"business_name": orig_name}
+        if orig_trade:
+            updates["trade_type"] = orig_trade
+        get_supabase().table("businesses").update(updates).eq("id", biz_id).execute()
 
 
 def _demo_action_menu_rows() -> list[dict]:
@@ -305,7 +320,7 @@ async def _demo_show_signup(
     settings = get_settings()
     biz_id = demo.get("business_id", "")
     _wizard_end_session(sender)
-    _demo_sessions.pop(sender, None)
+    _demo_cleanup(sender)
 
     await send_text_message(
         client, sender,
@@ -394,24 +409,34 @@ async def _maybe_handle_demo(
     supabase = get_supabase()
 
     # Re-use existing demo business for this phone, or create new
-    existing = supabase.table("businesses").select("id, subscription_status").eq(
+    existing = supabase.table("businesses").select("id, subscription_status, business_name, trade_type").eq(
         "phone_number", sender_e164
     ).execute()
+    original_biz_name = None
+    original_trade = None
     if existing.data and existing.data[0].get("subscription_status") in ("demo", "trial"):
         biz_id = existing.data[0]["id"]
     elif existing.data:
         # Already a real business — create demo session pointing to it
         biz_id = existing.data[0]["id"]
+        original_biz_name = existing.data[0].get("business_name")
+        original_trade = existing.data[0].get("trade_type")
     else:
         biz_id = str(uuid.uuid4())
         supabase.table("businesses").insert({
             "id": biz_id,
             "owner_name": "Demo User",
-            "business_name": "Your Business",
+            "business_name": "Plumbing Services 247",
             "phone_number": sender_e164,
             "trade_type": "plumber",
             "subscription_status": "demo",
         }).execute()
+
+    # Always set demo business name so the demo looks consistent
+    supabase.table("businesses").update({
+        "business_name": "Plumbing Services 247",
+        "trade_type": "plumber",
+    }).eq("id", biz_id).execute()
 
     # Ensure demo customer exists
     demo_cust = supabase.table("customers").select("id").eq(
@@ -438,8 +463,13 @@ async def _maybe_handle_demo(
     if demo_cust_id:
         _seed_demo_data(supabase, biz_id, demo_cust_id)
 
-    # Set up demo tracking
-    _demo_sessions[sender] = {"msg_count": 0, "business_id": biz_id}
+    # Set up demo tracking (save originals so we can restore after demo)
+    _demo_sessions[sender] = {
+        "msg_count": 0,
+        "business_id": biz_id,
+        "original_biz_name": original_biz_name,
+        "original_trade": original_trade,
+    }
 
     # Set up wizard — NO pre-selected customer so user picks them
     _wizard_sessions[sender] = {
@@ -478,7 +508,7 @@ async def _handle_demo_button(
     # ── Review demo: user tapped "Great!" as the customer ──
     if payload == "demo_review_great":
         session = _wizard_sessions.get(sender)
-        biz_name = "Your Business"
+        biz_name = "Plumbing Services 247"
         if session:
             biz = get_supabase().table("businesses").select("business_name").eq(
                 "id", session["business_id"]
@@ -556,7 +586,7 @@ async def _handle_demo_button(
     if payload == "demo_start_trial":
         demo = _demo_sessions.get(sender)
         if demo:
-            _demo_sessions.pop(sender, None)
+            _demo_cleanup(sender)
             _wizard_end_session(sender)
 
         # Check if they already have a real business
@@ -593,7 +623,7 @@ async def _handle_demo_button(
             return False
 
         trade = payload.replace("demo_trade_", "")
-        biz_name = session.get("business_name", "Your Business")
+        biz_name = session.get("business_name", "Plumbing Services 247")
         sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
         settings = get_settings()
 
@@ -622,7 +652,8 @@ async def _handle_demo_button(
                 "subscription_status": "inactive",
             }).execute()
 
-        _demo_sessions.pop(sender, None)
+        # Already set correct name above — just drop the demo session (no restore)
+        demo = _demo_sessions.pop(sender, None)
 
         checkout_url = f"{settings.base_url}/checkout.html?business_id={biz_id}"
         await send_text_message(
