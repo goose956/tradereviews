@@ -117,6 +117,131 @@ _DEMO_TRIGGERS = {
 }
 
 
+def _seed_demo_data(supabase: Any, biz_id: str, cust_id: str) -> None:
+    """Insert permanent demo records for every feature (idempotent)."""
+    import uuid as _uuid
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    # ── Check if already seeded ──
+    existing = supabase.table("invoices").select("id").eq(
+        "business_id", biz_id
+    ).eq("customer_id", cust_id).limit(1).execute()
+    if existing.data:
+        return  # already seeded
+
+    # ── Invoices (1 paid, 1 outstanding) ──
+    inv1_id = str(_uuid.uuid4())
+    supabase.table("invoices").insert({
+        "id": inv1_id,
+        "business_id": biz_id,
+        "customer_id": cust_id,
+        "invoice_number": "INV-001",
+        "status": "paid",
+        "subtotal": 350.00,
+        "tax_rate": 20,
+        "tax_amount": 70.00,
+        "total": 420.00,
+        "currency": "GBP",
+        "payment_terms": "Payment due within 14 days",
+        "notes": "Boiler service and repair",
+        "paid_at": (now - timedelta(days=3)).isoformat(),
+    }).execute()
+    supabase.table("line_items").insert({
+        "parent_id": inv1_id, "parent_type": "invoice",
+        "description": "Boiler service and repair",
+        "quantity": 1, "unit_price": 350.00, "total": 350.00, "sort_order": 0,
+    }).execute()
+
+    inv2_id = str(_uuid.uuid4())
+    supabase.table("invoices").insert({
+        "id": inv2_id,
+        "business_id": biz_id,
+        "customer_id": cust_id,
+        "invoice_number": "INV-002",
+        "status": "sent",
+        "subtotal": 180.00,
+        "tax_rate": 20,
+        "tax_amount": 36.00,
+        "total": 216.00,
+        "currency": "GBP",
+        "payment_terms": "Payment due within 14 days",
+        "notes": "Radiator replacement — front bedroom",
+        "due_date": (now + timedelta(days=11)).strftime("%Y-%m-%d"),
+    }).execute()
+    supabase.table("line_items").insert({
+        "parent_id": inv2_id, "parent_type": "invoice",
+        "description": "Radiator replacement — front bedroom",
+        "quantity": 1, "unit_price": 180.00, "total": 180.00, "sort_order": 0,
+    }).execute()
+
+    # ── Quote ──
+    quo_id = str(_uuid.uuid4())
+    supabase.table("quotes").insert({
+        "id": quo_id,
+        "business_id": biz_id,
+        "customer_id": cust_id,
+        "quote_number": "QUO-001",
+        "status": "sent",
+        "subtotal": 1200.00,
+        "tax_rate": 20,
+        "tax_amount": 240.00,
+        "total": 1440.00,
+        "currency": "GBP",
+        "valid_until": (now + timedelta(days=30)).strftime("%Y-%m-%d"),
+        "notes": "Full bathroom refit — supply and install",
+    }).execute()
+    supabase.table("line_items").insert({
+        "parent_id": quo_id, "parent_type": "quote",
+        "description": "Full bathroom refit — supply and install",
+        "quantity": 1, "unit_price": 1200.00, "total": 1200.00, "sort_order": 0,
+    }).execute()
+
+    # ── Expenses ──
+    for vendor, desc, cat, amount, days_ago in [
+        ("Screwfix", "Copper pipe fittings and solder", "materials", 47.85, 5),
+        ("Toolstation", "Replacement thermostatic valve", "materials", 28.50, 3),
+        ("Shell Garage", "Diesel — van", "fuel", 65.00, 1),
+    ]:
+        exp_id = str(_uuid.uuid4())
+        tax = round(amount * 0.2, 2)
+        supabase.table("expenses").insert({
+            "id": exp_id,
+            "business_id": biz_id,
+            "vendor": vendor,
+            "description": desc,
+            "category": cat,
+            "date": (now - timedelta(days=days_ago)).strftime("%Y-%m-%d"),
+            "subtotal": amount,
+            "tax_amount": tax,
+            "total": round(amount + tax, 2),
+            "currency": "GBP",
+        }).execute()
+
+    # ── Bookings (1 past, 2 upcoming) ──
+    for title, cname, days_offset, time_str in [
+        ("Boiler service", "John Smith", -2, "09:00"),
+        ("Radiator install", "John Smith", 2, "10:00"),
+        ("Emergency leak repair", "John Smith", 5, "14:30"),
+    ]:
+        bk_id = str(_uuid.uuid4())
+        supabase.table("bookings").insert({
+            "id": bk_id,
+            "business_id": biz_id,
+            "customer_id": cust_id,
+            "customer_name": cname,
+            "customer_phone": "+447700900123",
+            "title": title,
+            "date": (now + timedelta(days=days_offset)).strftime("%Y-%m-%d"),
+            "time": time_str,
+            "duration_mins": 60,
+            "notes": "",
+            "status": "confirmed",
+        }).execute()
+
+
 def _demo_action_menu_rows() -> list[dict]:
     """Action menu for demo users — includes signup option."""
     return [
@@ -291,41 +416,14 @@ async def _maybe_handle_demo(
         {"active_customer_phone": "+447700900123"}
     ).eq("id", biz_id).execute()
 
-    # Ensure demo invoice exists for John Smith
+    # ── Seed ALL demo data (idempotent — only inserts if missing) ──
     demo_cust_row = supabase.table("customers").select("id").eq(
         "business_id", biz_id
     ).eq("phone_number", "+447700900123").limit(1).execute()
-    if demo_cust_row.data:
-        demo_cust_id = demo_cust_row.data[0]["id"]
-        existing_inv = supabase.table("invoices").select("id").eq(
-            "business_id", biz_id
-        ).eq("customer_id", demo_cust_id).limit(1).execute()
-        if not existing_inv.data:
-            import uuid as _uuid
-            demo_inv_id = str(_uuid.uuid4())
-            supabase.table("invoices").insert({
-                "id": demo_inv_id,
-                "business_id": biz_id,
-                "customer_id": demo_cust_id,
-                "invoice_number": "INV-001",
-                "status": "paid",
-                "subtotal": 350.00,
-                "tax_rate": 20,
-                "tax_amount": 70.00,
-                "total": 420.00,
-                "currency": "GBP",
-                "payment_terms": "Payment due within 14 days",
-                "notes": "Boiler service and repair",
-            }).execute()
-            supabase.table("line_items").insert({
-                "parent_id": demo_inv_id,
-                "parent_type": "invoice",
-                "description": "Boiler service and repair",
-                "quantity": 1,
-                "unit_price": 350.00,
-                "total": 350.00,
-                "sort_order": 0,
-            }).execute()
+    demo_cust_id = demo_cust_row.data[0]["id"] if demo_cust_row.data else ""
+
+    if demo_cust_id:
+        _seed_demo_data(supabase, biz_id, demo_cust_id)
 
     # Set up demo tracking
     _demo_sessions[sender] = {"msg_count": 0, "business_id": biz_id}
