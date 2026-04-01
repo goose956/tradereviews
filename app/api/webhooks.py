@@ -261,7 +261,7 @@ async def _demo_show_menu(
     sender: str, demo: dict, client: httpx.AsyncClient,
     prefix: str = "",
 ) -> None:
-    """Show the demo action menu."""
+    """Show the demo action menu, with periodic signup nudge."""
     header = prefix or "What would you like to try next?"
     await send_interactive_list(
         client, sender,
@@ -269,6 +269,15 @@ async def _demo_show_menu(
         "Choose an option",
         [{"title": "Actions", "rows": _demo_action_menu_rows()}],
     )
+
+    # Every 5 messages, send a signup nudge
+    count = demo.get("msg_count", 0)
+    if count > 0 and count % 5 == 0:
+        await send_interactive_buttons(
+            client, sender,
+            "💡 Enjoying the demo? Get your own account — takes 30 seconds, cancel anytime.",
+            [{"id": "demo_start_trial", "title": "🚀 Get Started"}],
+        )
 
 
 async def _demo_check_limit(
@@ -499,6 +508,11 @@ async def _handle_demo_button(
             "Choose an option",
             [{"title": "Actions", "rows": _demo_action_menu_rows()}],
         )
+        await send_interactive_buttons(
+            client, sender,
+            "💡 Want this working for your real customers? Set up takes 30 seconds.",
+            [{"id": "demo_start_trial", "title": "🚀 Get Started"}],
+        )
         return True
 
     # ── Review demo: user tapped "Could be better" as the customer ──
@@ -526,6 +540,11 @@ async def _handle_demo_button(
             "But that's just the start — here's everything else you can do:",
             "Choose an option",
             [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+        )
+        await send_interactive_buttons(
+            client, sender,
+            "💡 Want this working for your real customers? Set up takes 30 seconds.",
+            [{"id": "demo_start_trial", "title": "🚀 Get Started"}],
         )
         return True
 
