@@ -102,9 +102,10 @@ def _wizard_end_session(sender: str) -> None:
 
 
 # ──────────────────────────────────────────────
-# Interactive Demo — "The Flip" state machine
+# Interactive Demo — sandbox with 30-message limit
 # ──────────────────────────────────────────────
-_demo_sessions: dict[str, dict] = {}  # sender raw phone → session dict
+_demo_sessions: dict[str, dict] = {}  # sender raw phone → {msg_count, business_id}
+_DEMO_MSG_LIMIT = 30
 
 _DEMO_TRIGGERS = {
     "hi, show me how this works!",
@@ -116,59 +117,94 @@ _DEMO_TRIGGERS = {
 }
 
 
+def _demo_action_menu_rows() -> list[dict]:
+    """Action menu for demo users — includes signup option."""
+    return [
+        {"id": "wiz_review", "title": "⭐ Review Request", "description": "See what your customers receive"},
+        {"id": "wiz_invoice", "title": "💷 Create Invoice", "description": "Build a real invoice with PDF"},
+        {"id": "wiz_quote", "title": "📋 Create Quote", "description": "Build a real quote with PDF"},
+        {"id": "wiz_expense", "title": "🧾 Snap a Receipt", "description": "AI reads & logs it automatically"},
+        {"id": "wiz_booking", "title": "📅 New Booking", "description": "Add a job to your calendar"},
+        {"id": "wiz_view_bookings", "title": "🗓 View Calendar", "description": "See upcoming bookings"},
+        {"id": "wiz_balance", "title": "💰 Account Balance", "description": "View income & outstanding"},
+        {"id": "wiz_view_expenses", "title": "📊 View Expenses", "description": "See your expense summary"},
+        {"id": "demo_start_trial", "title": "🚀 Get Started", "description": "Sign up — takes 30 seconds"},
+    ]
+
+
+async def _demo_show_menu(
+    sender: str, demo: dict, client: httpx.AsyncClient,
+    prefix: str = "",
+) -> None:
+    """Show the demo action menu with remaining message count."""
+    remaining = _DEMO_MSG_LIMIT - demo.get("msg_count", 0)
+    header = prefix or f"You have *{remaining}* demo messages left."
+    await send_interactive_list(
+        client, sender,
+        f"✅ {header}\n\nWhat would you like to try?",
+        "Choose an option",
+        [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+    )
+
+
+async def _demo_check_limit(
+    sender: str, client: httpx.AsyncClient,
+) -> bool:
+    """Increment demo counter. If limit reached, show signup and return True."""
+    demo = _demo_sessions.get(sender)
+    if not demo:
+        return False
+    demo["msg_count"] = demo.get("msg_count", 0) + 1
+    if demo["msg_count"] >= _DEMO_MSG_LIMIT:
+        await _demo_show_signup(sender, demo, client)
+        return True
+    return False
+
+
+async def _demo_show_signup(
+    sender: str, demo: dict, client: httpx.AsyncClient,
+) -> None:
+    """Demo limit reached — prompt to sign up."""
+    settings = get_settings()
+    biz_id = demo.get("business_id", "")
+    _wizard_end_session(sender)
+    _demo_sessions.pop(sender, None)
+
+    await send_text_message(
+        client, sender,
+        "🎉 *That's the end of your demo!*\n\n"
+        "You've seen what ReviewEngine can do — now imagine "
+        "it working for your real customers every day.\n\n"
+        "Ready to get started?",
+    )
+    await send_interactive_buttons(
+        client, sender,
+        "Sign up takes 30 seconds:",
+        [
+            {"id": "demo_start_trial", "title": "🚀 Get Started"},
+        ],
+    )
+
+
 async def _maybe_handle_demo(
     sender: str, text: str, client: httpx.AsyncClient
 ) -> bool:
-    """Route demo flow messages.  Returns True if handled."""
-    session = _demo_sessions.get(sender)
+    """Handle demo trigger. Returns True if handled."""
+    demo = _demo_sessions.get(sender)
     trimmed = text.strip()
     lower = trimmed.lower().rstrip("!.")
 
-    # ── New demo session trigger ──
-    if session is None:
-        if lower not in _DEMO_TRIGGERS:
-            return False
-        # /demo always works; casual greetings skip registered businesses
-        force = lower in ("/demo", "demo")
-        if not force:
-            sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
-            supabase = get_supabase()
-            biz = supabase.table("businesses").select("id").eq("phone_number", sender_e164).execute()
-            if biz.data:
-                return False
-
-        _demo_sessions[sender] = {"state": "welcome"}
-        await send_text_message(
-            client, sender,
-            "Hey! \U0001f44b Welcome to ReviewEngine.\n\n"
-            "I help tradespeople get more 5-star Google reviews "
-            "\u2014 plus handle invoices, quotes, expenses and bookings. "
-            "All from WhatsApp.\n\n"
-            "Let me show you how it works in 60 seconds.",
-        )
-        await send_interactive_buttons(
-            client, sender,
-            "What would you like to see first?",
-            [
-                {"id": "demo_review_flow", "title": "\u2b50 Review Request"},
-                {"id": "demo_all_features", "title": "\U0001f4cb All Features"},
-            ],
-        )
-        return True
-
-    state = session.get("state", "")
-
-    # ── awaiting_business_name — free text for trial signup ──
-    if state == "awaiting_business_name":
+    # ── Signup flow: awaiting business name ──
+    if demo and demo.get("state") == "awaiting_business_name":
         biz_name = trimmed
         if len(biz_name) < 2:
-            await send_text_message(client, sender, "Just type your business name \u2014 e.g. \"Smith's Plumbing\"")
+            await send_text_message(client, sender, "Just type your business name — e.g. \"Smith's Plumbing\"")
             return True
-        session["business_name"] = biz_name
-        session["state"] = "awaiting_trade"
+        demo["business_name"] = biz_name
+        demo["state"] = "awaiting_trade"
         await send_interactive_list(
             client, sender,
-            f"Great \u2014 {biz_name}! What trade are you in?",
+            f"Great — {biz_name}! What trade are you in?",
             "Pick your trade",
             [{"title": "Trade", "rows": [
                 {"id": "demo_trade_plumber", "title": "Plumber"},
@@ -182,157 +218,161 @@ async def _maybe_handle_demo(
         )
         return True
 
-    # ── Any other text while in demo ──
-    if state in ("welcome", "review_sent", "features_shown"):
-        await send_text_message(
-            client, sender,
-            "Tap one of the buttons above to continue! \u261d\ufe0f",
-        )
-        return True
-
-    if state == "completed":
-        del _demo_sessions[sender]
+    # ── Existing demo user with active wizard — let wizard handle it ──
+    if demo and sender in _wizard_sessions:
         return False
 
+    # ── Existing demo user, no wizard — re-entry (typed /START etc) ──
+    if demo:
+        if await _demo_check_limit(sender, client):
+            return True
+        # Re-create wizard session with demo customer pre-selected
+        _wizard_sessions[sender] = {
+            "state": "choose_action",
+            "business_id": demo["business_id"],
+            "customer_phone": "+447700900123",
+            "customer_name": "John Smith",
+            "channel": "whatsapp",
+        }
+        _start_timeout(sender, client)
+        await _demo_show_menu(sender, demo, client)
+        return True
+
+    # ── New demo trigger ──
+    if lower not in _DEMO_TRIGGERS:
+        return False
+
+    # /demo always works; casual greetings skip registered businesses
+    force = lower in ("/demo", "demo")
+    if not force:
+        sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
+        supabase = get_supabase()
+        biz = supabase.table("businesses").select("id").eq("phone_number", sender_e164).execute()
+        if biz.data:
+            return False
+
+    # ── Create demo business + customer ──
+    import uuid
+    sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
+    supabase = get_supabase()
+
+    # Re-use existing demo business for this phone, or create new
+    existing = supabase.table("businesses").select("id, subscription_status").eq(
+        "phone_number", sender_e164
+    ).execute()
+    if existing.data and existing.data[0].get("subscription_status") == "demo":
+        biz_id = existing.data[0]["id"]
+    elif existing.data:
+        # Already a real business — create demo session pointing to it
+        biz_id = existing.data[0]["id"]
+    else:
+        biz_id = str(uuid.uuid4())
+        supabase.table("businesses").insert({
+            "id": biz_id,
+            "owner_name": "Demo User",
+            "business_name": "Your Business",
+            "phone_number": sender_e164,
+            "trade_type": "plumber",
+            "subscription_status": "demo",
+        }).execute()
+
+    # Ensure demo customer exists
+    demo_cust = supabase.table("customers").select("id").eq(
+        "business_id", biz_id
+    ).eq("phone_number", "+447700900123").execute()
+    if not demo_cust.data:
+        supabase.table("customers").upsert({
+            "business_id": biz_id,
+            "phone_number": "+447700900123",
+            "name": "John Smith",
+            "status": "active",
+        }, on_conflict="business_id,phone_number").execute()
+
+    supabase.table("businesses").update(
+        {"active_customer_phone": "+447700900123"}
+    ).eq("id", biz_id).execute()
+
+    # Set up demo tracking
+    _demo_sessions[sender] = {"msg_count": 0, "business_id": biz_id}
+
+    # Set up wizard with pre-selected customer
+    _wizard_sessions[sender] = {
+        "state": "choose_action",
+        "business_id": biz_id,
+        "customer_phone": "+447700900123",
+        "customer_name": "John Smith",
+        "channel": "whatsapp",
+    }
+    _start_timeout(sender, client)
+
+    await send_text_message(
+        client, sender,
+        "Hey! 👋 Welcome to *ReviewEngine*.\n\n"
+        "This is a *live sandbox* — try every feature for real. "
+        "I've set you up with a test customer (*John Smith*) "
+        "so you can see exactly how it works.\n\n"
+        "I'll show you *two points of view*:\n"
+        "👷 *YOU* — what you see as the business owner\n"
+        "📱 *YOUR CUSTOMER* — what John would receive\n\n"
+        f"You have *{_DEMO_MSG_LIMIT} free messages* to explore. Let's go!",
+    )
+
+    await send_interactive_list(
+        client, sender,
+        "👷 *YOUR VIEW:* Pick an action to try:",
+        "Choose an option",
+        [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+    )
     return True
 
 
 async def _handle_demo_button(
     sender: str, payload: str, client: httpx.AsyncClient
 ) -> bool:
-    """Handle button taps during the demo.  Returns True if handled."""
-    session = _demo_sessions.get(sender)
-    if not session and payload != "demo_start_trial":
-        return False
+    """Handle demo-specific button taps. Returns True if handled."""
     if not payload.startswith("demo_"):
         return False
 
-    state = session.get("state", "") if session else ""
-
-    # ── Welcome → Review Flow ──
-    if payload == "demo_review_flow":
-        session["state"] = "review_sent"
-
-        await send_text_message(
-            client, sender,
-            "\u2705 *Review request sent to John!*\n\n"
-            "Here's what just happened:\n"
-            "1\ufe0f\u20e3 You tapped \u2018Review Request\u2019\n"
-            "2\ufe0f\u20e3 We sent John a personalised message mentioning "
-            "the job you did for him\n"
-            "3\ufe0f\u20e3 If he doesn't reply, we follow up automatically\n\n"
-            "Now let's switch roles. \U0001f504 Imagine *you* are John. "
-            "Your phone just buzzed. Here's what he sees:",
-        )
-
-        await send_interactive_buttons(
-            client, sender,
-            "Hi John, thanks for choosing Smith's Plumbing for the "
-            "boiler installation! How was your experience?",
-            [
-                {"id": "demo_great", "title": "Great! \u2b50"},
-                {"id": "demo_bad", "title": "Could be better"},
-            ],
-        )
-        return True
-
-    # ── Welcome → All Features ──
-    if payload == "demo_all_features":
-        session["state"] = "features_shown"
-
-        await send_text_message(
-            client, sender,
-            "\U0001f4ac *Everything you can do from WhatsApp:*\n\n"
-            "\u2b50 *Review Requests* \u2014 Send via WhatsApp, text or email. "
-            "Auto follow-ups if they forget. Bad reviews come to you first.\n\n"
-            "\U0001f4b7 *Invoices & Quotes* \u2014 Create and send professional "
-            "PDFs in 30 seconds. Track what\u2019s paid and what\u2019s outstanding.\n\n"
-            "\U0001f9fe *Expense Tracking* \u2014 Snap a photo of a receipt. "
-            "AI reads it and logs the expense automatically.\n\n"
-            "\U0001f4c5 *Bookings & Calendar* \u2014 Manage your schedule, "
-            "check availability, book jobs.\n\n"
-            "\U0001f4ca *Dashboard* \u2014 See revenue, outstanding invoices, "
-            "review stats and upcoming bookings at a glance.\n\n"
-            "\U0001f916 *AI Review Replies* \u2014 Every Google review gets an "
-            "AI-drafted reply waiting for your approval.",
-        )
-
-        await send_interactive_buttons(
-            client, sender,
-            "Want to see the review flow in action, or ready to get started?",
-            [
-                {"id": "demo_review_flow", "title": "\u2b50 See Review Demo"},
-                {"id": "demo_start_trial", "title": "\U0001f680 Get Started"},
-            ],
-        )
-        return True
-
-    # ── Customer taps "Great!" ──
-    if payload == "demo_great":
-        session["state"] = "review_result"
-
-        await send_text_message(
-            client, sender,
-            "\U0001f389 *John tapped \u2018Great\u2019!*\n\n"
-            "We instantly send him the link to your Google page. "
-            "He taps it, leaves a 5-star review, done.\n\n"
-            "Meanwhile, you get a WhatsApp notification:\n"
-            "\u2705 \"John left a 5-star review! AI reply drafted \u2014 "
-            "tap to approve.\"\n\n"
-            "The whole thing took 30 seconds of your time.",
-        )
-
-        await send_interactive_buttons(
-            client, sender,
-            "That's the review flow! Want to see what else ReviewEngine can do?",
-            [
-                {"id": "demo_all_features", "title": "\U0001f4cb See Features"},
-                {"id": "demo_start_trial", "title": "\U0001f680 Get Started"},
-            ],
-        )
-        return True
-
-    # ── Customer taps "Could be better" ──
-    if payload == "demo_bad":
-        session["state"] = "review_result"
-
-        await send_text_message(
-            client, sender,
-            "\u26a0\ufe0f *John said \u2018Could be better\u2019*\n\n"
-            "Instead of going to Google, John\u2019s feedback comes "
-            "straight to you privately. You get:\n\n"
-            "\u26a0\ufe0f \"John wasn\u2019t happy. Call him on 07700 900123 "
-            "to sort it out before he leaves a bad review.\"\n\n"
-            "This \u2018review gating\u2019 protects your Google rating. "
-            "You fix the problem, keep the customer, save your reputation.",
-        )
-
-        await send_interactive_buttons(
-            client, sender,
-            "That's the bad review protection. Want to see more features?",
-            [
-                {"id": "demo_all_features", "title": "\U0001f4cb See Features"},
-                {"id": "demo_start_trial", "title": "\U0001f680 Get Started"},
-            ],
-        )
-        return True
-
     # ── Start Trial — ask for business name ──
     if payload == "demo_start_trial":
-        if not session:
-            _demo_sessions[sender] = {"state": "awaiting_business_name"}
-        else:
-            session["state"] = "awaiting_business_name"
+        demo = _demo_sessions.get(sender)
+        if demo:
+            _demo_sessions.pop(sender, None)
+            _wizard_end_session(sender)
 
+        # Check if they already have a real business
+        sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
+        supabase = get_supabase()
+        existing = supabase.table("businesses").select("id, subscription_status").eq(
+            "phone_number", sender_e164
+        ).execute()
+
+        if existing.data and existing.data[0].get("subscription_status") not in ("demo", None):
+            biz_id = existing.data[0]["id"]
+            settings = get_settings()
+            checkout_url = f"{settings.base_url}/checkout.html?business_id={biz_id}"
+            await send_text_message(
+                client, sender,
+                f"You already have an account! Complete your setup:\n"
+                f"👉 {checkout_url}",
+            )
+            return True
+
+        # Start signup: ask business name
+        _demo_sessions[sender] = {"state": "awaiting_business_name"}
         await send_text_message(
             client, sender,
-            "\U0001f680 Let's get you set up! It takes 30 seconds.\n\n"
-            "What's your business name?",
+            "🚀 Let's get you set up! It takes 30 seconds.\n\n"
+            "What's your *business name*?",
         )
         return True
 
-    # ── Trade selection ──
+    # ── Trade selection (during signup) ──
     if payload.startswith("demo_trade_"):
+        session = _demo_sessions.get(sender)
+        if not session:
+            return False
+
         trade = payload.replace("demo_trade_", "")
         biz_name = session.get("business_name", "Your Business")
         sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
@@ -347,6 +387,7 @@ async def _handle_demo_button(
             biz_id = existing.data[0]["id"]
             supabase.table("businesses").update({
                 "business_name": biz_name,
+                "owner_name": biz_name,
                 "trade_type": trade,
                 "subscription_status": "inactive",
             }).eq("phone_number", sender_e164).execute()
@@ -495,8 +536,15 @@ async def _handle_text(
 
     if biz_result.data:
         biz = biz_result.data[0]
+        status = biz.get("subscription_status", "")
+
+        # Demo user: check message limit
+        if status == "demo" and sender in _demo_sessions:
+            if await _demo_check_limit(sender, client):
+                return
+
         # Nudge inactive (unpaid) users
-        if biz.get("subscription_status") == "inactive":
+        if status == "inactive":
             settings = get_settings()
             checkout_url = f"{settings.base_url}/checkout.html?business_id={biz['id']}"
             await send_text_message(
@@ -587,8 +635,11 @@ _CHANNEL_LABELS = {
 }
 
 
-def _action_menu_rows(channel: str = "whatsapp") -> list[dict]:
+def _action_menu_rows(channel: str = "whatsapp", sender: str = "") -> list[dict]:
     """Return the interactive-list rows for the action picker."""
+    # Demo users get a menu with signup option instead of dashboard/channel
+    if sender and sender in _demo_sessions:
+        return _demo_action_menu_rows()
     ch_label = _CHANNEL_LABELS.get(channel, "📱 WhatsApp")
     return [
         {"id": "wiz_review", "title": "⭐ Review Request", "description": "Ask for a Google review"},
@@ -815,7 +866,7 @@ async def _wizard_handle_button(
             client, sender,
             f"✅ Channel set to *{ch_label}*\n\nWhat would you like to do?",
             "Choose an option",
-            [{"title": "Actions", "rows": _action_menu_rows("whatsapp")}],
+            [{"title": "Actions", "rows": _action_menu_rows("whatsapp", sender)}],
         )
         return True
 
@@ -844,7 +895,7 @@ async def _wizard_handle_button(
                 f"✅ Channel set to *{ch_label}*\n"
                 f"Email: {existing_email}\n\nWhat would you like to do?",
                 "Choose an option",
-                [{"title": "Actions", "rows": _action_menu_rows("email")}],
+                [{"title": "Actions", "rows": _action_menu_rows("email", sender)}],
             )
         else:
             session["state"] = "awaiting_customer_email"
@@ -863,7 +914,7 @@ async def _wizard_handle_button(
             client, sender,
             f"✅ Channel set to *{ch_label}*\n\nWhat would you like to do?",
             "Choose an option",
-            [{"title": "Actions", "rows": _action_menu_rows("sms")}],
+            [{"title": "Actions", "rows": _action_menu_rows("sms", sender)}],
         )
         return True
 
@@ -911,7 +962,7 @@ async def _wizard_new_customer_input(
         f"\u2705 *{parsed.name}* ({parsed.phone}) added!\n\n"
         f"What would you like to do?",
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session["channel"])}],
+        [{"title": "Actions", "rows": _action_menu_rows(session["channel"], sender)}],
     )
 
 
@@ -945,7 +996,7 @@ async def _wizard_email_input(
         f"✅ Email saved! Channel set to *{ch_label}*\n"
         f"Email: {email}\n\nWhat would you like to do?",
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows("email")}],
+        [{"title": "Actions", "rows": _action_menu_rows("email", sender)}],
     )
 
 
@@ -1035,7 +1086,7 @@ async def _wizard_customer_selected(
         client, sender,
         f"\u2705 Selected *{cust['name']}*\n\nWhat would you like to do?",
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session["channel"])}],
+        [{"title": "Actions", "rows": _action_menu_rows(session["channel"], sender)}],
     )
 
 
@@ -1095,7 +1146,7 @@ async def _wizard_action_balance(
     await send_interactive_list(
         client, sender, msg,
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
     )
 
 
@@ -1211,6 +1262,36 @@ async def _wizard_action_review(
         if job_desc
         else ""
     )
+
+    # ── Demo mode: show POV instead of actually sending ──
+    if business.get("subscription_status") == "demo":
+        await send_text_message(
+            client, sender,
+            f"📱 *YOUR CUSTOMER ({customer_name}) would receive:*\n\n"
+            f"\"Hi {first_name}, thanks for choosing {biz_name}{job_snippet}! "
+            f"{job_thanks}How was your experience?\"\n\n"
+            f"They'd see two buttons:\n"
+            f"  ✅ *Great!* → Sent to your Google review page\n"
+            f"  ⚠️ *Could be better* → Feedback comes to YOU privately",
+        )
+        await send_text_message(
+            client, sender,
+            f"🔔 *YOU would then see (if they tap Great):*\n\n"
+            f"\"✅ {customer_name} left a 5-star review!\n"
+            f"AI reply drafted — tap to approve.\"\n\n"
+            f"⚠️ *If they tap 'Could be better':*\n\n"
+            f"\"⚠️ {customer_name} wasn't happy. Call them on "
+            f"{customer_phone} to sort it out before they leave a bad review.\"\n\n"
+            f"_Auto follow-ups are sent if they don't respond._",
+        )
+        session["state"] = "choose_action"
+        await send_interactive_list(
+            client, sender,
+            "That's the review flow! What else would you like to try?",
+            "Choose an option",
+            [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+        )
+        return
 
     try:
         if channel == "email" and customer_email:
@@ -1556,6 +1637,44 @@ async def _send_invoice_to_customer(
     ch_label = _CHANNEL_LABELS.get(channel, "WhatsApp")
     sent_via = ""
 
+    # ── Demo mode: show POV instead of actually sending ──
+    if business.get("subscription_status") == "demo":
+        session = _wizard_sessions.get(sender)
+        await send_text_message(
+            client, sender,
+            f"📱 *YOUR CUSTOMER ({customer_name}) would receive:*\n\n"
+            f"\"Hi {first_name}, here is your invoice from {biz_name}:\n\n"
+            f"📄 *Invoice {invoice_number}*\n"
+            f"• {description}\n"
+            f"• Subtotal: {sym}{subtotal:.2f}\n"
+            f"• VAT ({tax_rate:.0f}%): {sym}{tax_amount:.2f}\n"
+            f"• *Total: {sym}{total:.2f}*\n\n"
+            f"📎 Download PDF: {pdf_url}\"\n\n"
+            f"_The PDF is real — tap the link to see it!_",
+        )
+        await send_text_message(
+            client, sender,
+            f"🔔 *YOU would see:*\n\n"
+            f"\"✅ Invoice {invoice_number} sent to {customer_name} "
+            f"for {sym}{total:.2f}\"\n\n"
+            f"_It appears in your dashboard under Outstanding invoices._",
+        )
+        supabase.table("invoices").update({
+            "status": "sent",
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", inv["id"]).execute()
+        if session:
+            session["state"] = "choose_action"
+            await send_interactive_list(
+                client, sender,
+                "What would you like to try next?",
+                "Choose an option",
+                [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+            )
+        else:
+            _wizard_end_session(sender)
+        return
+
     try:
         if channel == "email" and customer_email:
             subject, html_body, plain_body = build_invoice_email(
@@ -1754,6 +1873,45 @@ async def _send_quote_to_customer(
     ch_label = _CHANNEL_LABELS.get(channel, "WhatsApp")
     sent_via = ""
 
+    # ── Demo mode: show POV instead of actually sending ──
+    if business.get("subscription_status") == "demo":
+        session = _wizard_sessions.get(sender)
+        await send_text_message(
+            client, sender,
+            f"📱 *YOUR CUSTOMER ({customer_name}) would receive:*\n\n"
+            f"\"Hi {first_name}, here is a quote from {biz_name}:\n\n"
+            f"📄 *Quote {quote_number}*\n"
+            f"• {description}\n"
+            f"• Subtotal: {sym}{subtotal:.2f}\n"
+            f"• VAT ({tax_rate:.0f}%): {sym}{tax_amount:.2f}\n"
+            f"• *Total: {sym}{total:.2f}*\n"
+            f"• Valid until: {valid_until}\n\n"
+            f"📎 Download PDF: {pdf_url}\"\n\n"
+            f"_The PDF is real — tap the link to see it!_",
+        )
+        await send_text_message(
+            client, sender,
+            f"🔔 *YOU would see:*\n\n"
+            f"\"✅ Quote {quote_number} sent to {customer_name} "
+            f"for {sym}{total:.2f}\"\n\n"
+            f"_It appears in your dashboard under Quotes._",
+        )
+        supabase.table("quotes").update({
+            "status": "sent",
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", quo["id"]).execute()
+        if session:
+            session["state"] = "choose_action"
+            await send_interactive_list(
+                client, sender,
+                "What would you like to try next?",
+                "Choose an option",
+                [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+            )
+        else:
+            _wizard_end_session(sender)
+        return
+
     try:
         if channel == "email" and customer_email:
             subject, html_body, plain_body = build_quote_email(
@@ -1891,7 +2049,7 @@ async def _wizard_view_expenses(
         client, sender,
         "What would you like to do next?",
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
     )
 
 
@@ -1957,7 +2115,7 @@ async def _wizard_view_bookings(
         client, sender,
         "What would you like to do next?",
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
     )
 
 
@@ -2257,7 +2415,7 @@ async def _confirm_booking(sender: str, client: httpx.AsyncClient) -> None:
         client, sender,
         "What would you like to do next?",
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
     )
 
     sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
@@ -2408,7 +2566,7 @@ async def _handle_image(
             client, sender,
             "What would you like to do next?",
             "Choose an option",
-            [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"))}],
+            [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
         )
 
         log_message(
@@ -2684,6 +2842,11 @@ async def _handle_button(
     # ── Demo flow buttons ──
     if payload.startswith("demo_"):
         if await _handle_demo_button(sender, payload, client):
+            return
+
+    # ── Demo message limit check ──
+    if sender in _demo_sessions:
+        if await _demo_check_limit(sender, client):
             return
 
     # ── Wizard flow buttons ──
