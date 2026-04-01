@@ -309,22 +309,16 @@ async def _maybe_handle_demo(
         "Hey! 👋 Welcome to *ReviewEngine*.\n\n"
         "I've set you up with a test customer (*John Smith*) "
         "so you can see exactly how it works.\n\n"
-        "I'll show you *two points of view*:\n"
-        "👷 *YOU* — what you see as the business owner\n"
-        "📱 *YOUR CUSTOMER* — what John would receive\n\n"
-        "Let's start with the *review request* — the most popular feature.",
+        "Let's start with the *review request* — the most popular feature.\n\n"
+        "👇 Tap *\"Choose an option\"* below to send one.",
     )
 
-    # Go straight into the review flow
-    session = _wizard_sessions.get(sender)
-    if session:
-        business = get_supabase().table("businesses").select("*").eq(
-            "id", session["business_id"]
-        ).execute().data
-        if business:
-            await _wizard_review_check_invoices(sender, session, business[0], client)
-            return True
-
+    await send_interactive_list(
+        client, sender,
+        "👷 *YOUR VIEW:* What would you like to do?",
+        "Choose an option",
+        [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+    )
     return True
 
 
@@ -334,6 +328,67 @@ async def _handle_demo_button(
     """Handle demo-specific button taps. Returns True if handled."""
     if not payload.startswith("demo_"):
         return False
+
+    # ── Review demo: user tapped "Great!" as the customer ──
+    if payload == "demo_review_great":
+        session = _wizard_sessions.get(sender)
+        biz_name = "Your Business"
+        if session:
+            biz = get_supabase().table("businesses").select("business_name").eq(
+                "id", session["business_id"]
+            ).execute().data
+            if biz:
+                biz_name = biz[0]["business_name"]
+
+        await send_text_message(
+            client, sender,
+            "👷 *Back to YOUR view now…*\n\n"
+            "✅ *John Smith left a 5-star review!*\n"
+            "⭐⭐⭐⭐⭐\n\n"
+            "_\"Great service from " + biz_name + ", very professional.\"_\n\n"
+            "🤖 *AI has drafted a reply:*\n"
+            "_\"Thank you so much John! We really appreciate your kind words. "
+            "It was a pleasure working with you — don't hesitate to reach out "
+            "if you need anything in future!\"_\n\n"
+            "In the real app you'd tap to approve or edit this reply, "
+            "and it gets posted to Google automatically.\n\n"
+            "_Auto follow-ups are also sent if customers don't respond._",
+        )
+        if session:
+            session["state"] = "choose_action"
+        await send_interactive_list(
+            client, sender,
+            "That's the review flow! 🎉\n\n"
+            "But that's just the start — here's everything else you can do:",
+            "Choose an option",
+            [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+        )
+        return True
+
+    # ── Review demo: user tapped "Could be better" as the customer ──
+    if payload == "demo_review_bad":
+        session = _wizard_sessions.get(sender)
+        customer_phone = "+447700900123"
+
+        await send_text_message(
+            client, sender,
+            "👷 *Back to YOUR view now…*\n\n"
+            "⚠️ *John Smith wasn't fully satisfied.*\n\n"
+            "Their feedback comes to YOU *privately* — not posted publicly.\n"
+            f"You'd get a prompt to call them on {customer_phone} "
+            "to sort things out before they leave a bad review.\n\n"
+            "This catches unhappy customers *before* they go to Google. 🛡️",
+        )
+        if session:
+            session["state"] = "choose_action"
+        await send_interactive_list(
+            client, sender,
+            "That's the review flow! 🎉\n\n"
+            "But that's just the start — here's everything else you can do:",
+            "Choose an option",
+            [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+        )
+        return True
 
     # ── Start Trial — ask for business name ──
     if payload == "demo_start_trial":
@@ -1265,35 +1320,25 @@ async def _wizard_action_review(
         else ""
     )
 
-    # ── Demo mode: show POV instead of actually sending ──
+    # ── Demo mode: send the REAL customer message to the demo user ──
     if business.get("subscription_status") == "demo":
         await send_text_message(
             client, sender,
-            f"📱 *YOUR CUSTOMER ({customer_name}) would receive:*\n\n"
-            f"\"Hi {first_name}, thanks for choosing {biz_name}{job_snippet}! "
-            f"{job_thanks}How was your experience?\"\n\n"
-            f"They'd see two buttons:\n"
-            f"  ✅ *Great!* → Sent to your Google review page\n"
-            f"  ⚠️ *Could be better* → Feedback comes to YOU privately",
+            "✅ *Review request sent to John Smith!*\n\n"
+            "📱 Now switch hats — you're *John* for a moment.\n"
+            "Here's what he'd see on his phone:",
         )
-        await send_text_message(
+        await send_interactive_buttons(
             client, sender,
-            f"🔔 *YOU would then see (if they tap Great):*\n\n"
-            f"\"✅ {customer_name} left a 5-star review!\n"
-            f"AI reply drafted — tap to approve.\"\n\n"
-            f"⚠️ *If they tap 'Could be better':*\n\n"
-            f"\"⚠️ {customer_name} wasn't happy. Call them on "
-            f"{customer_phone} to sort it out before they leave a bad review.\"\n\n"
-            f"_Auto follow-ups are sent if they don't respond._",
+            f"Hi John, thanks for choosing {biz_name}{job_snippet}! "
+            f"{job_thanks}"
+            f"How was your experience?",
+            [
+                {"id": "demo_review_great", "title": "Great! ⭐"},
+                {"id": "demo_review_bad", "title": "Could be better"},
+            ],
         )
-        session["state"] = "choose_action"
-        await send_interactive_list(
-            client, sender,
-            "That's the review flow! 🎉\n\n"
-            "But that's just the start — here's everything else you can do:",
-            "Choose an option",
-            [{"title": "Actions", "rows": _demo_action_menu_rows()}],
-        )
+        session["state"] = "demo_awaiting_review_tap"
         return
 
     try:
