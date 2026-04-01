@@ -27,7 +27,7 @@ async def send_email(
         logger.error("RESEND_API_KEY not configured")
         raise RuntimeError("Resend API key not configured")
 
-    from_email = settings.resend_from_email or "ReviewEngine <noreply@jobping.co.uk>"
+    from_email = settings.resend_from_email or "onboarding@resend.dev"
 
     payload: dict[str, Any] = {
         "from": from_email,
