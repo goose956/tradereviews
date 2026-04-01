@@ -259,7 +259,7 @@ async def _maybe_handle_demo(
     existing = supabase.table("businesses").select("id, subscription_status").eq(
         "phone_number", sender_e164
     ).execute()
-    if existing.data and existing.data[0].get("subscription_status") == "demo":
+    if existing.data and existing.data[0].get("subscription_status") in ("demo", "trial"):
         biz_id = existing.data[0]["id"]
     elif existing.data:
         # Already a real business — create demo session pointing to it
@@ -272,7 +272,7 @@ async def _maybe_handle_demo(
             "business_name": "Your Business",
             "phone_number": sender_e164,
             "trade_type": "plumber",
-            "subscription_status": "demo",
+            "subscription_status": "trial",
         }).execute()
 
     # Ensure demo customer exists
@@ -445,7 +445,7 @@ async def _handle_demo_button(
             "phone_number", sender_e164
         ).execute()
 
-        if existing.data and existing.data[0].get("subscription_status") not in ("demo", None):
+        if existing.data and existing.data[0].get("subscription_status") not in ("demo", "trial", None):
             biz_id = existing.data[0]["id"]
             settings = get_settings()
             checkout_url = f"{settings.base_url}/checkout.html?business_id={biz_id}"
@@ -637,7 +637,7 @@ async def _handle_text(
         status = biz.get("subscription_status", "")
 
         # Demo user: check message limit
-        if status == "demo" and sender in _demo_sessions:
+        if sender in _demo_sessions:
             if await _demo_check_limit(sender, client):
                 return
 
@@ -1374,7 +1374,7 @@ async def _wizard_action_review(
     )
 
     # ── Demo mode: send the REAL customer message to the demo user ──
-    if business.get("subscription_status") == "demo":
+    if sender in _demo_sessions:
         await send_text_message(
             client, sender,
             "✅ *Review request sent to John Smith!*\n\n"
@@ -1739,7 +1739,7 @@ async def _send_invoice_to_customer(
     sent_via = ""
 
     # ── Demo mode: show POV instead of actually sending ──
-    if business.get("subscription_status") == "demo":
+    if sender in _demo_sessions:
         session = _wizard_sessions.get(sender)
         await send_text_message(
             client, sender,
@@ -1975,7 +1975,7 @@ async def _send_quote_to_customer(
     sent_via = ""
 
     # ── Demo mode: show POV instead of actually sending ──
-    if business.get("subscription_status") == "demo":
+    if sender in _demo_sessions:
         session = _wizard_sessions.get(sender)
         await send_text_message(
             client, sender,

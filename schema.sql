@@ -22,7 +22,7 @@ CREATE TABLE businesses (
     stripe_customer_id    TEXT,                          -- Stripe Customer ID
     stripe_subscription_id TEXT,                         -- Stripe Subscription ID
     subscription_status   TEXT        NOT NULL DEFAULT 'active'
-                              CHECK (subscription_status IN ('active', 'past_due', 'inactive', 'trial')),
+                              CHECK (subscription_status IN ('active', 'past_due', 'inactive', 'trial', 'demo')),
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
