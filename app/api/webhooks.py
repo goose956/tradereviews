@@ -272,7 +272,7 @@ async def _maybe_handle_demo(
             "business_name": "Your Business",
             "phone_number": sender_e164,
             "trade_type": "plumber",
-            "subscription_status": "trial",
+            "subscription_status": "demo",
         }).execute()
 
     # Ensure demo customer exists
