@@ -1,9 +1,12 @@
 """Member portal API — lets business owners manage their account."""
 
 import logging
+import os
+import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, Depends
-from fastapi.responses import Response
+from fastapi import APIRouter, HTTPException, Request, Depends, UploadFile, File
+from fastapi.responses import Response, FileResponse
 from pydantic import BaseModel
 
 from app.api.auth import get_current_business
@@ -13,6 +16,17 @@ from app.services.message_log import log_message
 from app.services.pdf_generator import generate_invoice_pdf, generate_quote_pdf
 
 logger = logging.getLogger(__name__)
+
+_LOGO_MAX_BYTES = 2 * 1024 * 1024  # 2 MB
+_LOGO_ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp"}
+
+
+def _logos_dir() -> Path:
+    vol = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+    base = Path(vol) if vol else Path(__file__).resolve().parent.parent.parent
+    d = base / "logos"
+    d.mkdir(exist_ok=True)
+    return d
 router = APIRouter(
     prefix="/member", tags=["member"],
     dependencies=[Depends(get_current_business)],
@@ -53,6 +67,8 @@ class BusinessUpdate(BaseModel):
     followup_interval_days: int | None = None
     followup_max_count: int | None = None
     followup_message: str | None = None
+    brand_color: str | None = None
+    logo_url: str | None = None
 
 
 class LineItemIn(BaseModel):
@@ -137,6 +153,56 @@ async def update_business(business_id: str, body: BusinessUpdate) -> dict:
     if not result.data:
         raise HTTPException(status_code=404, detail="Business not found")
     return result.data[0]
+
+
+@router.post("/business/{business_id}/logo")
+async def upload_logo(business_id: str, file: UploadFile = File(...)) -> dict:
+    """Upload a logo image for the business (max 2 MB, PNG/JPEG/WebP)."""
+    if file.content_type not in _LOGO_ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="Only PNG, JPEG, and WebP images are allowed")
+
+    data = await file.read()
+    if len(data) > _LOGO_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Logo must be under 2 MB")
+
+    ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[file.content_type]
+    filename = f"{business_id}{ext}"
+    dest = _logos_dir() / filename
+    dest.write_bytes(data)
+
+    from app.core.config import get_settings
+    logo_url = f"{get_settings().base_url}/member/business/{business_id}/logo/{filename}"
+
+    db = get_supabase()
+    db.table("businesses").update({"logo_url": logo_url}).eq("id", business_id).execute()
+
+    return {"logo_url": logo_url}
+
+
+@router.delete("/business/{business_id}/logo")
+async def delete_logo(business_id: str) -> dict:
+    """Remove the business logo."""
+    db = get_supabase()
+    db.table("businesses").update({"logo_url": ""}).eq("id", business_id).execute()
+    # Clean up files
+    for ext in (".png", ".jpg", ".webp"):
+        p = _logos_dir() / f"{business_id}{ext}"
+        if p.exists():
+            p.unlink()
+    return {"ok": True}
+
+
+@public_router.get("/business/{business_id}/logo/{filename}")
+async def serve_logo(business_id: str, filename: str) -> FileResponse:
+    """Serve a logo image file."""
+    # Sanitise filename
+    safe = Path(filename).name
+    if not safe.startswith(business_id):
+        raise HTTPException(status_code=404)
+    fpath = _logos_dir() / safe
+    if not fpath.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(fpath)
 
 
 # ── Customers list ───────────────────────────────────

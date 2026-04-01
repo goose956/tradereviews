@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import os
+from pathlib import Path
 from typing import Any
 
 from fpdf import FPDF
@@ -17,17 +19,54 @@ def _cs(currency: str) -> str:
     return CURRENCY_SYMBOLS.get(currency, currency + " ")
 
 
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """Convert '#16a34a' or '16a34a' to (r, g, b)."""
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return (22, 163, 74)  # default green-600
+    try:
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    except ValueError:
+        return (22, 163, 74)
+
+
+def _logos_dir() -> Path:
+    vol = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+    base = Path(vol) if vol else Path(__file__).resolve().parent.parent.parent
+    return base / "logos"
+
+
+def _find_logo(business_id: str) -> str | None:
+    """Return the file path of the logo if it exists on disk."""
+    d = _logos_dir()
+    for ext in (".png", ".jpg", ".webp"):
+        p = d / f"{business_id}{ext}"
+        if p.exists():
+            return str(p)
+    return None
+
+
 class _InvoicePDF(FPDF):
     """Custom PDF with header/footer styling."""
 
-    def __init__(self, title: str, biz_name: str) -> None:
+    def __init__(self, title: str, biz_name: str, brand_rgb: tuple[int, int, int] = (22, 163, 74), logo_path: str | None = None) -> None:
         super().__init__()
         self._doc_title = title
         self._biz_name = biz_name
+        self._brand_rgb = brand_rgb
+        self._logo_path = logo_path
 
     def header(self) -> None:
+        # Logo (if available)
+        if self._logo_path:
+            try:
+                self.image(self._logo_path, x=10, y=8, h=16)
+                self.set_x(30)  # offset text past logo
+            except Exception:
+                pass  # skip if image fails
+
         self.set_font("Helvetica", "B", 18)
-        self.set_text_color(22, 163, 74)  # green-600
+        self.set_text_color(*self._brand_rgb)
         self.cell(0, 10, self._biz_name, new_x="LMARGIN", new_y="NEXT")
         self.set_font("Helvetica", "B", 28)
         self.set_text_color(55, 65, 81)  # gray-700
@@ -65,7 +104,10 @@ def generate_invoice_pdf(
     sym = _cs(currency)
     tax_label = business.get("tax_label", "VAT")
 
-    pdf = _InvoicePDF("INVOICE", business.get("business_name", ""))
+    brand_rgb = _hex_to_rgb(business.get("brand_color", "") or "#16a34a")
+    logo_path = _find_logo(business.get("id", ""))
+
+    pdf = _InvoicePDF("INVOICE", business.get("business_name", ""), brand_rgb=brand_rgb, logo_path=logo_path)
     pdf.set_auto_page_break(auto=True, margin=25)
     pdf.add_page()
 
@@ -209,7 +251,7 @@ def generate_invoice_pdf(
         pdf.set_text_color(107, 114, 128)
         pdf.cell(0, 5, "PAY ONLINE", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", 10)
-        pdf.set_text_color(22, 163, 74)  # green-600
+        pdf.set_text_color(*brand_rgb)
         pdf.cell(0, 5, link, new_x="LMARGIN", new_y="NEXT", link=link)
         pdf.set_text_color(55, 65, 81)
         pdf.ln(3)
@@ -238,7 +280,10 @@ def generate_quote_pdf(
     sym = _cs(currency)
     tax_label = business.get("tax_label", "VAT")
 
-    pdf = _InvoicePDF("QUOTE", business.get("business_name", ""))
+    brand_rgb = _hex_to_rgb(business.get("brand_color", "") or "#16a34a")
+    logo_path = _find_logo(business.get("id", ""))
+
+    pdf = _InvoicePDF("QUOTE", business.get("business_name", ""), brand_rgb=brand_rgb, logo_path=logo_path)
     pdf.set_auto_page_break(auto=True, margin=25)
     pdf.add_page()
 

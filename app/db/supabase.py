@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS businesses (
     payment_link         TEXT NOT NULL DEFAULT '',
     currency             TEXT NOT NULL DEFAULT 'GBP',
     confirm_before_send  INTEGER NOT NULL DEFAULT 0,
+    brand_color          TEXT NOT NULL DEFAULT '#16a34a',
+    logo_url             TEXT NOT NULL DEFAULT '',
     followup_enabled     INTEGER NOT NULL DEFAULT 1,
     followup_interval_days INTEGER NOT NULL DEFAULT 3,
     followup_max_count   INTEGER NOT NULL DEFAULT 2,
@@ -267,6 +269,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE businesses ADD COLUMN followup_interval_days INTEGER NOT NULL DEFAULT 3")
         conn.execute("ALTER TABLE businesses ADD COLUMN followup_max_count INTEGER NOT NULL DEFAULT 2")
         conn.execute("ALTER TABLE businesses ADD COLUMN followup_message TEXT NOT NULL DEFAULT 'Hi {first_name}, just a quick reminder — we''d really appreciate your feedback! It only takes a minute. Thank you 😊'")
+        conn.commit()
+
+    # Brand customisation
+    if "brand_color" not in biz_cols:
+        conn.execute("ALTER TABLE businesses ADD COLUMN brand_color TEXT NOT NULL DEFAULT '#16a34a'")
+        conn.execute("ALTER TABLE businesses ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''")
         conn.commit()
 
 

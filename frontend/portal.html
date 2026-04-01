@@ -251,6 +251,33 @@
 
       <hr class="my-4" />
 
+      <h2 class="text-lg font-bold mb-2">Invoice Branding</h2>
+      <p class="text-xs text-gray-400 mb-4">Customise how your invoices and quotes look</p>
+
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Brand Colour</label>
+          <div class="flex items-center gap-3">
+            <input id="fBrandColor" type="color" value="#16a34a" class="w-10 h-10 rounded border border-gray-300 cursor-pointer" />
+            <span id="brandColorHex" class="text-sm text-gray-500">#16a34a</span>
+          </div>
+          <p class="text-xs text-gray-400 mt-1">Used for business name and accent colour on PDFs</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Business Logo</label>
+          <div id="logoPreviewWrap" class="mb-2 hidden">
+            <img id="logoPreview" src="" alt="Logo" class="h-16 rounded border border-gray-200 bg-white p-1" />
+            <button type="button" onclick="deleteLogo()" class="text-xs text-red-600 hover:underline mt-1 block">Remove logo</button>
+          </div>
+          <label class="flex items-center justify-center w-full h-10 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-green-500 transition">
+            <span class="text-sm text-gray-500" id="logoUploadLabel">Click to upload (PNG, JPG, WebP — max 2 MB)</span>
+            <input id="fLogoFile" type="file" accept="image/png,image/jpeg,image/webp" class="hidden" onchange="uploadLogo(this)" />
+          </label>
+        </div>
+      </div>
+
+      <hr class="my-4" />
+
       <h2 class="text-lg font-bold mb-2">Tax &amp; Invoicing</h2>
 
       <div class="flex items-center gap-4 mb-4">
@@ -915,6 +942,17 @@ async function loadBusiness() {
   document.getElementById('fFollowUpMax').value = biz.followup_max_count || 2;
   document.getElementById('fFollowUpMessage').value = biz.followup_message || '';
   document.getElementById('fConfirmBeforeSend').checked = !!biz.confirm_before_send;
+  // Brand colour
+  const bc = biz.brand_color || '#16a34a';
+  document.getElementById('fBrandColor').value = bc;
+  document.getElementById('brandColorHex').textContent = bc;
+  // Logo
+  if (biz.logo_url) {
+    document.getElementById('logoPreview').src = biz.logo_url;
+    document.getElementById('logoPreviewWrap').classList.remove('hidden');
+  } else {
+    document.getElementById('logoPreviewWrap').classList.add('hidden');
+  }
   document.getElementById('fAddress').value = biz.business_address || '';
   document.getElementById('fCity').value = biz.business_city || '';
   document.getElementById('fPostcode').value = biz.business_postcode || '';
@@ -965,6 +1003,41 @@ function toggleFollowUpOptions() {
 }
 followUpCheckbox.addEventListener('change', toggleFollowUpOptions);
 
+// ── Brand colour live preview ────────────────────
+document.getElementById('fBrandColor').addEventListener('input', (e) => {
+  document.getElementById('brandColorHex').textContent = e.target.value;
+});
+
+// ── Logo upload ──────────────────────────────────
+async function uploadLogo(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showToast('Logo must be under 2 MB', 'error'); return; }
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  const res = await fetch(`${API}/logo`, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + reToken },
+    body: fd,
+  });
+  if (!res.ok) { showToast('Upload failed', 'error'); return; }
+  const data = await res.json();
+  document.getElementById('logoPreview').src = data.logo_url;
+  document.getElementById('logoPreviewWrap').classList.remove('hidden');
+  showToast('Logo uploaded');
+  input.value = '';
+}
+
+async function deleteLogo() {
+  const res = await authFetch(`${API}/logo`, { method: 'DELETE' });
+  if (!res.ok) { showToast('Delete failed', 'error'); return; }
+  document.getElementById('logoPreviewWrap').classList.add('hidden');
+  document.getElementById('logoPreview').src = '';
+  showToast('Logo removed');
+}
+
 // ── Save business settings ───────────────────────
 document.getElementById('settingsForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -993,6 +1066,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     accepted_payment_methods: [...document.querySelectorAll('.pay-method-cb:checked')].map(cb => cb.value).join(',') || 'cash',
     payment_link: document.getElementById('fPaymentLink').value.trim(),
     confirm_before_send: document.getElementById('fConfirmBeforeSend').checked,
+    brand_color: document.getElementById('fBrandColor').value,
     followup_enabled: document.getElementById('fFollowUp').checked,
     followup_interval_days: parseInt(document.getElementById('fFollowUpInterval').value) || 3,
     followup_max_count: parseInt(document.getElementById('fFollowUpMax').value) || 2,
