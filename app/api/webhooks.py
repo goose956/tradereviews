@@ -136,12 +136,11 @@ async def _demo_show_menu(
     sender: str, demo: dict, client: httpx.AsyncClient,
     prefix: str = "",
 ) -> None:
-    """Show the demo action menu with remaining message count."""
-    remaining = _DEMO_MSG_LIMIT - demo.get("msg_count", 0)
-    header = prefix or f"You have *{remaining}* demo messages left."
+    """Show the demo action menu."""
+    header = prefix or "What would you like to try next?"
     await send_interactive_list(
         client, sender,
-        f"✅ {header}\n\nWhat would you like to try?",
+        f"✅ {header}",
         "Choose an option",
         [{"title": "Actions", "rows": _demo_action_menu_rows()}],
     )
@@ -308,21 +307,24 @@ async def _maybe_handle_demo(
     await send_text_message(
         client, sender,
         "Hey! 👋 Welcome to *ReviewEngine*.\n\n"
-        "This is a *live sandbox* — try every feature for real. "
         "I've set you up with a test customer (*John Smith*) "
         "so you can see exactly how it works.\n\n"
         "I'll show you *two points of view*:\n"
         "👷 *YOU* — what you see as the business owner\n"
         "📱 *YOUR CUSTOMER* — what John would receive\n\n"
-        f"You have *{_DEMO_MSG_LIMIT} free messages* to explore. Let's go!",
+        "Let's start with the *review request* — the most popular feature.",
     )
 
-    await send_interactive_list(
-        client, sender,
-        "👷 *YOUR VIEW:* Pick an action to try:",
-        "Choose an option",
-        [{"title": "Actions", "rows": _demo_action_menu_rows()}],
-    )
+    # Go straight into the review flow
+    session = _wizard_sessions.get(sender)
+    if session:
+        business = get_supabase().table("businesses").select("*").eq(
+            "id", session["business_id"]
+        ).execute().data
+        if business:
+            await _wizard_review_check_invoices(sender, session, business[0], client)
+            return True
+
     return True
 
 
@@ -1287,7 +1289,8 @@ async def _wizard_action_review(
         session["state"] = "choose_action"
         await send_interactive_list(
             client, sender,
-            "That's the review flow! What else would you like to try?",
+            "That's the review flow! 🎉\n\n"
+            "But that's just the start — here's everything else you can do:",
             "Choose an option",
             [{"title": "Actions", "rows": _demo_action_menu_rows()}],
         )
