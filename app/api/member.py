@@ -126,6 +126,13 @@ async def update_business(business_id: str, body: BusinessUpdate) -> dict:
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
+    # Moderate follow-up message before saving (sent to all customers automatically)
+    if "followup_message" in updates and updates["followup_message"]:
+        from app.services.moderation import moderate_outbound
+        mod_warning = await moderate_outbound(updates["followup_message"])
+        if mod_warning:
+            raise HTTPException(status_code=400, detail="Follow-up message blocked by content moderation")
+
     result = db.table("businesses").update(updates).eq("id", business_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -754,6 +761,13 @@ async def send_invoice_whatsapp(business_id: str, invoice_id: str, request: Requ
 
     media_id = await upload_media(client, pdf_bytes, filename=filename)
     caption = f"Invoice {inv.get('invoice_number', '')} from {biz.get('business_name', '')} — Total: {inv.get('total', 0):.2f}"
+
+    # Content moderation check
+    from app.services.moderation import moderate_outbound
+    mod_warning = await moderate_outbound(caption)
+    if mod_warning:
+        raise HTTPException(status_code=400, detail="Message blocked by content moderation")
+
     await send_document_message(client, customer["phone_number"], media_id, filename=filename, caption=caption)
 
     log_message(
@@ -818,6 +832,13 @@ async def send_quote_whatsapp(business_id: str, quote_id: str, request: Request)
 
     media_id = await upload_media(client, pdf_bytes, filename=filename)
     caption = f"Quote {q.get('quote_number', '')} from {biz.get('business_name', '')} — Total: {q.get('total', 0):.2f}"
+
+    # Content moderation check
+    from app.services.moderation import moderate_outbound
+    mod_warning = await moderate_outbound(caption)
+    if mod_warning:
+        raise HTTPException(status_code=400, detail="Message blocked by content moderation")
+
     await send_document_message(client, customer["phone_number"], media_id, filename=filename, caption=caption)
 
     log_message(

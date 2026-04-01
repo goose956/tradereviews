@@ -496,6 +496,13 @@ async def send_follow_ups(request: Request) -> dict[str, Any]:
             if review_link:
                 body += f"\n\n{review_link}"
 
+            # Content moderation check
+            from app.services.moderation import moderate_outbound
+            mod_warning = await moderate_outbound(body)
+            if mod_warning:
+                logger.warning("Follow-up blocked for biz %s: moderation flagged", biz["id"])
+                continue
+
             phone = cust["phone_number"].lstrip("+")
             try:
                 await send_text_message(http_client, phone, body)

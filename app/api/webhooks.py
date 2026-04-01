@@ -38,6 +38,7 @@ from app.services.sms_service import (
     build_quote_sms,
     build_review_sms,
 )
+from app.services.moderation import moderate_outbound
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook/whatsapp", tags=["webhook"])
@@ -1546,6 +1547,12 @@ async def _wizard_action_review(
         session["state"] = "demo_awaiting_review_tap"
         return
 
+    # ── Content moderation check ──
+    mod_warning = await moderate_outbound(f"{biz_name} {job_desc}")
+    if mod_warning:
+        await send_text_message(client, sender, mod_warning)
+        return
+
     try:
         if channel == "email" and customer_email:
             subject, html_body, plain_body = build_review_email(
@@ -1928,6 +1935,12 @@ async def _send_invoice_to_customer(
             _wizard_end_session(sender)
         return
 
+    # ── Content moderation check ──
+    mod_warning = await moderate_outbound(f"{description} {biz_name}")
+    if mod_warning:
+        await send_text_message(client, sender, mod_warning)
+        return
+
     try:
         if channel == "email" and customer_email:
             subject, html_body, plain_body = build_invoice_email(
@@ -2163,6 +2176,12 @@ async def _send_quote_to_customer(
             )
         else:
             _wizard_end_session(sender)
+        return
+
+    # ── Content moderation check ──
+    mod_warning = await moderate_outbound(f"{description} {biz_name}")
+    if mod_warning:
+        await send_text_message(client, sender, mod_warning)
         return
 
     try:
