@@ -291,33 +291,68 @@ async def _maybe_handle_demo(
         {"active_customer_phone": "+447700900123"}
     ).eq("id", biz_id).execute()
 
+    # Ensure demo invoice exists for John Smith
+    demo_cust_row = supabase.table("customers").select("id").eq(
+        "business_id", biz_id
+    ).eq("phone_number", "+447700900123").limit(1).execute()
+    if demo_cust_row.data:
+        demo_cust_id = demo_cust_row.data[0]["id"]
+        existing_inv = supabase.table("invoices").select("id").eq(
+            "business_id", biz_id
+        ).eq("customer_id", demo_cust_id).limit(1).execute()
+        if not existing_inv.data:
+            import uuid as _uuid
+            demo_inv_id = str(_uuid.uuid4())
+            supabase.table("invoices").insert({
+                "id": demo_inv_id,
+                "business_id": biz_id,
+                "customer_id": demo_cust_id,
+                "invoice_number": "INV-001",
+                "status": "paid",
+                "subtotal": 350.00,
+                "tax_rate": 20,
+                "tax_amount": 70.00,
+                "total": 420.00,
+                "currency": "GBP",
+                "payment_terms": "Payment due within 14 days",
+                "notes": "Boiler service and repair",
+            }).execute()
+            supabase.table("line_items").insert({
+                "parent_id": demo_inv_id,
+                "parent_type": "invoice",
+                "description": "Boiler service and repair",
+                "quantity": 1,
+                "unit_price": 350.00,
+                "total": 350.00,
+                "sort_order": 0,
+            }).execute()
+
     # Set up demo tracking
     _demo_sessions[sender] = {"msg_count": 0, "business_id": biz_id}
 
-    # Set up wizard with pre-selected customer
+    # Set up wizard — NO pre-selected customer so user picks them
     _wizard_sessions[sender] = {
-        "state": "choose_action",
+        "state": "awaiting_customer_pick",
         "business_id": biz_id,
-        "customer_phone": "+447700900123",
-        "customer_name": "John Smith",
         "channel": "whatsapp",
     }
     _start_timeout(sender, client)
 
+    # Get demo customer id for button
+    _demo_cust_id = demo_cust_row.data[0]["id"] if demo_cust_row.data else ""
+
     await send_text_message(
         client, sender,
         "Hey! 👋 Welcome to *ReviewEngine*.\n\n"
-        "I've set you up with a test customer (*John Smith*) "
-        "so you can see exactly how it works.\n\n"
-        "Let's start with the *review request* — the most popular feature.\n\n"
-        "👇 Tap *\"Choose an option\"* below to send one.",
+        "Let me show you how easy it is to get a 5-star review.\n\n"
+        "First — pick the customer you just finished a job for:",
     )
 
-    await send_interactive_list(
+    # Show customer picker (just John Smith)
+    await send_interactive_buttons(
         client, sender,
-        "👷 *YOUR VIEW:* What would you like to do?",
-        "Choose an option",
-        [{"title": "Actions", "rows": _demo_action_menu_rows()}],
+        "Who would you like to send a review request to?",
+        [{"id": f"wiz_cust_{_demo_cust_id}", "title": "John Smith"}],
     )
     return True
 
@@ -356,6 +391,9 @@ async def _handle_demo_button(
         )
         if session:
             session["state"] = "choose_action"
+        demo = _demo_sessions.get(sender)
+        if demo:
+            demo["review_done"] = True
         await send_interactive_list(
             client, sender,
             "That's the review flow! 🎉\n\n"
@@ -381,6 +419,9 @@ async def _handle_demo_button(
         )
         if session:
             session["state"] = "choose_action"
+        demo = _demo_sessions.get(sender)
+        if demo:
+            demo["review_done"] = True
         await send_interactive_list(
             client, sender,
             "That's the review flow! 🎉\n\n"
@@ -1138,6 +1179,18 @@ async def _wizard_customer_selected(
     session["customer_name"] = cust["name"]
     session["state"] = "choose_action"
     session.setdefault("channel", "whatsapp")
+
+    # Demo first-run: skip action menu, go straight to review flow
+    demo = _demo_sessions.get(sender)
+    if demo and not demo.get("review_done"):
+        await send_text_message(
+            client, sender,
+            f"✅ Selected *{cust['name']}*\n\n"
+            "Now let's send them a review request.\n"
+            "If there's an invoice on file, you can personalise it with the job details:",
+        )
+        await _wizard_review_check_invoices(sender, session, business, client)
+        return
 
     await send_interactive_list(
         client, sender,
