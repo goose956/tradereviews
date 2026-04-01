@@ -1,4 +1,4 @@
-"""Send emails via SendGrid API."""
+"""Send emails via Resend API."""
 
 import logging
 from html import escape
@@ -10,7 +10,7 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send"
+RESEND_API_URL = "https://api.resend.com/emails"
 
 
 async def send_email(
@@ -20,35 +20,34 @@ async def send_email(
     html_body: str,
     plain_body: str = "",
 ) -> dict[str, Any]:
-    """Send an email via SendGrid. Returns the response status."""
+    """Send an email via Resend. Returns the response data."""
     settings = get_settings()
 
-    if not settings.sendgrid_api_key:
-        logger.error("SENDGRID_API_KEY not configured")
-        raise RuntimeError("SendGrid API key not configured")
+    if not settings.resend_api_key:
+        logger.error("RESEND_API_KEY not configured")
+        raise RuntimeError("Resend API key not configured")
 
-    from_email = settings.sendgrid_from_email or "noreply@jobping.co.uk"
+    from_email = settings.resend_from_email or "ReviewEngine <noreply@jobping.co.uk>"
 
-    payload = {
-        "personalizations": [{"to": [{"email": to_email}]}],
-        "from": {"email": from_email},
+    payload: dict[str, Any] = {
+        "from": from_email,
+        "to": [to_email],
         "subject": subject,
-        "content": [],
+        "html": html_body,
     }
-
     if plain_body:
-        payload["content"].append({"type": "text/plain", "value": plain_body})
-    payload["content"].append({"type": "text/html", "value": html_body})
+        payload["text"] = plain_body
 
     headers = {
-        "Authorization": f"Bearer {settings.sendgrid_api_key}",
+        "Authorization": f"Bearer {settings.resend_api_key}",
         "Content-Type": "application/json",
     }
 
-    response = await client.post(SENDGRID_API_URL, headers=headers, json=payload)
+    response = await client.post(RESEND_API_URL, headers=headers, json=payload)
     response.raise_for_status()
-    logger.info("Email sent to %s — status %s", to_email, response.status_code)
-    return {"status": response.status_code}
+    data = response.json()
+    logger.info("Email sent to %s — id %s", to_email, data.get("id"))
+    return data
 
 
 def build_invoice_email(

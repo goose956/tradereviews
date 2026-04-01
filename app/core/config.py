@@ -40,9 +40,9 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_id: str = ""          # Stripe Price ID for the subscription plan
 
-    # SendGrid (email)
-    sendgrid_api_key: str = ""
-    sendgrid_from_email: str = ""
+    # Resend (email)
+    resend_api_key: str = ""
+    resend_from_email: str = ""
 
     # Twilio (SMS)
     twilio_account_sid: str = ""
