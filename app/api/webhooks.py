@@ -371,6 +371,12 @@ async def _maybe_handle_demo(
         )
         return True
 
+    # ── Existing demo user sends a demo trigger again — restart fresh ──
+    if demo and lower in _DEMO_TRIGGERS:
+        _wizard_end_session(sender)
+        _demo_cleanup(sender)
+        demo = None  # fall through to "New demo trigger" below
+
     # ── Existing demo user with active wizard — let wizard handle it ──
     if demo and sender in _wizard_sessions:
         return False
