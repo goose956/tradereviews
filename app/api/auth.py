@@ -125,7 +125,7 @@ async def request_code(body: RequestCode, request: Request) -> dict:
 
     # Send OTP via WhatsApp
     client: httpx.AsyncClient = request.app.state.http_client
-    otp_message = f"🔐 Your ReviewEngine login code is: *{code}*\n\nThis code expires in {OTP_EXPIRY_MINUTES} minutes. Do not share it with anyone."
+    otp_message = f"🔐 Your GafferApp login code is: *{code}*\n\nThis code expires in {OTP_EXPIRY_MINUTES} minutes. Do not share it with anyone."
     try:
         await send_text_message(client, phone, otp_message)
     except Exception:

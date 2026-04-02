@@ -326,7 +326,7 @@ async def _demo_show_signup(
     await send_text_message(
         client, sender,
         "🎉 *That's the end of your demo!*\n\n"
-        "You've seen what ReviewEngine can do — now imagine "
+        "You've seen what GafferApp can do — now imagine "
         "it working for your real customers every day.\n\n"
         "Ready to get started?",
     )
@@ -491,7 +491,7 @@ async def _maybe_handle_demo(
 
     await send_text_message(
         client, sender,
-        "Hey! 👋 Welcome to *ReviewEngine*.\n\n"
+        "Hey! 👋 Welcome to *GafferApp*.\n\n"
         "Let me show you how easy it is to get a 5-star review.\n\n"
         "First — pick the customer you just finished a job for:",
     )
@@ -869,7 +869,7 @@ async def _handle_tradesperson_text(
     if upper.startswith("/HELP"):
         await send_text_message(
             client, sender,
-            "\U0001f4cb *How to use JobPing*\n\n"
+            "\U0001f4cb *How to use GafferApp*\n\n"
             "Type /START to begin a new session.\n"
             "The bot will walk you through sending reviews,\n"
             "invoices, or quotes step by step.\n\n"

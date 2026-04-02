@@ -1,4 +1,4 @@
-# ReviewEngine — App Knowledge Base
+# GafferApp — App Knowledge Base
 
 > **Last updated: March 2026**
 > This document is used by the AI help assistant to answer tradesperson questions.
@@ -6,9 +6,9 @@
 
 ---
 
-## What is ReviewEngine?
+## What is GafferApp?
 
-ReviewEngine is a WhatsApp-based SaaS platform built for UK tradespeople (plumbers, electricians, builders, roofers, landscapers, etc.). It helps them:
+GafferApp is a WhatsApp-based SaaS platform built for UK tradespeople (plumbers, electricians, builders, roofers, landscapers, etc.). It helps them:
 
 - Collect Google reviews from customers via WhatsApp
 - Auto-reply to Google reviews using AI
@@ -23,7 +23,7 @@ Everything is controlled through WhatsApp commands — no separate app needed. T
 
 ## WhatsApp Commands
 
-All commands are sent via WhatsApp to the ReviewEngine number.
+All commands are sent via WhatsApp to the GafferApp number.
 
 ### /SETUP <Name> <Phone>
 Add a new customer and send them a welcome/icebreaker message.
@@ -170,7 +170,7 @@ Access via `/LOGIN` or by going to your dashboard URL and entering your phone + 
 ## Frequently Asked Questions
 
 **How do I get started?**
-Message the ReviewEngine WhatsApp number. You'll be guided through setup. Use `/SETUP` to add your first customer.
+Message the GafferApp WhatsApp number. You'll be guided through setup. Use `/SETUP` to add your first customer.
 
 **How do I change my business details?**
 Send `/LOGIN` to get access to your web dashboard, then go to the Settings tab.

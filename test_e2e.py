@@ -1,5 +1,5 @@
 """
-End-to-end test for the ReviewEngine app.
+End-to-end test for the GafferApp app.
 Tests: auth, customers, invoices, quotes, expenses, bookings, messages, stats, PDFs.
 Directly inserts a session token into the DB to avoid WhatsApp OTP.
 """
@@ -38,7 +38,7 @@ def check(name, condition, detail=""):
 
 async def run_tests():
     print("=" * 60)
-    print("  REVIEWENGINE END-TO-END TEST")
+    print("  GAFFERAPP END-TO-END TEST")
     print("=" * 60)
 
     # ── Step 0: Check server is up ──

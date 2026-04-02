@@ -60,7 +60,7 @@ def _load_knowledge_base() -> str:
 
 
 _HELP_SYSTEM_PROMPT = (
-    "You are a friendly, helpful support assistant for ReviewEngine — "
+    "You are a friendly, helpful support assistant for GafferApp — "
     "a WhatsApp-based business tool for UK tradespeople. "
     "Answer the user's question based ONLY on the knowledge base provided below. "
     "Keep answers concise and practical (under 200 words). "
