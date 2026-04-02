@@ -512,6 +512,38 @@ async def _handle_demo_button(
     if not payload.startswith("demo_"):
         return False
 
+    # ── Review demo: user confirmed delivery channel — now send ──
+    if payload == "demo_review_send_confirm":
+        session = _wizard_sessions.get(sender)
+        if not session:
+            return True
+        biz_id = session.get("business_id", "")
+        biz_row = get_supabase().table("businesses").select("business_name").eq("id", biz_id).execute().data
+        biz_name = biz_row[0]["business_name"] if biz_row else "Plumbing Services 247"
+        customer_name = session.get("customer_name", "John Smith")
+        job_desc = session.get("review_job_description", "")
+        job_snippet = f" for the {job_desc}" if job_desc else ""
+        job_thanks = f"We hope you're happy with the {job_desc} we completed for you. " if job_desc else ""
+
+        await send_text_message(
+            client, sender,
+            f"✅ *Review request sent to {customer_name}!*\n\n"
+            "📱 Now switch hats — you're *John* for a moment.\n"
+            "Here's what he'd see on his phone:",
+        )
+        await send_interactive_buttons(
+            client, sender,
+            f"Hi John, thanks for choosing {biz_name}{job_snippet}! "
+            f"{job_thanks}"
+            f"How was your experience?",
+            [
+                {"id": "demo_review_great", "title": "Great! ⭐"},
+                {"id": "demo_review_bad", "title": "Could be better"},
+            ],
+        )
+        session["state"] = "demo_awaiting_review_tap"
+        return True
+
     # ── Review demo: user tapped "Great!" as the customer ──
     if payload == "demo_review_great":
         session = _wizard_sessions.get(sender)
@@ -1532,25 +1564,24 @@ async def _wizard_action_review(
         else ""
     )
 
-    # ── Demo mode: send the REAL customer message to the demo user ──
+    # ── Demo mode: show delivery channel confirmation before sending ──
     if sender in _demo_sessions:
+        session["state"] = "demo_confirm_review_send"
         await send_text_message(
             client, sender,
-            "✅ *Review request sent to John Smith!*\n\n"
-            "📱 Now switch hats — you're *John* for a moment.\n"
-            "Here's what he'd see on his phone:",
+            f"📤 *Delivery method for {customer_name}:*\n\n"
+            f"✅ 📱 *WhatsApp* — selected\n"
+            f"☐ 📧 Email\n"
+            f"☐ 💬 SMS\n\n"
+            f"_You can change your default channel anytime from the main menu._",
         )
         await send_interactive_buttons(
             client, sender,
-            f"Hi John, thanks for choosing {biz_name}{job_snippet}! "
-            f"{job_thanks}"
-            f"How was your experience?",
+            f"Send review request to {customer_name} via WhatsApp?",
             [
-                {"id": "demo_review_great", "title": "Great! ⭐"},
-                {"id": "demo_review_bad", "title": "Could be better"},
+                {"id": "demo_review_send_confirm", "title": "✅ Send Now"},
             ],
         )
-        session["state"] = "demo_awaiting_review_tap"
         return
 
     # ── Content moderation check ──
