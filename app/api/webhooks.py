@@ -1634,7 +1634,7 @@ async def _wizard_action_review(
                 review_link=review_link or "https://g.page/review",
                 job_description=job_desc,
             )
-            await send_sms(client, customer_phone, sms_body, from_number=business.get("twilio_number", ""))
+            await send_sms(client, customer_phone, sms_body)
             sent_via = f"via SMS to {customer_phone}"
         else:
             customer_raw = customer_phone.lstrip("+")
@@ -2036,7 +2036,7 @@ async def _send_invoice_to_customer(
                 total=total, sym=sym, pdf_url=pdf_url,
                 personal_phone=personal_phone,
             )
-            await send_sms(client, customer_phone, sms_body, from_number=business.get("twilio_number", ""))
+            await send_sms(client, customer_phone, sms_body)
             sent_via = f"via SMS to {customer_phone}"
         else:
             invoice_msg = (
@@ -2290,7 +2290,7 @@ async def _send_quote_to_customer(
                 total=total, sym=sym, valid_until=valid_until,
                 pdf_url=pdf_url, personal_phone=personal_phone,
             )
-            await send_sms(client, customer_phone, sms_body, from_number=business.get("twilio_number", ""))
+            await send_sms(client, customer_phone, sms_body)
             sent_via = f"via SMS to {customer_phone}"
         else:
             quote_msg = (

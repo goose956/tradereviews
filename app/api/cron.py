@@ -504,17 +504,14 @@ async def send_follow_ups(request: Request) -> dict[str, Any]:
                 continue
 
             phone = cust["phone_number"].lstrip("+")
-            twilio_num = biz.get("twilio_number", "")
             opted_in = cust.get("whatsapp_opted_in", 0)
             try:
                 if opted_in:
                     # Customer opted in — send via WhatsApp
                     await send_text_message(http_client, phone, body)
-                elif twilio_num:
-                    from app.services.sms_service import send_sms
-                    await send_sms(http_client, cust["phone_number"], body, from_number=twilio_num)
                 else:
-                    await send_text_message(http_client, phone, body)
+                    from app.services.sms_service import send_sms
+                    await send_sms(http_client, cust["phone_number"], body)
                 supabase.table("customers").update({
                     "followup_count": followup_count + 1,
                     "last_followup_at": now.isoformat(),
