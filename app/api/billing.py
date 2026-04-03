@@ -177,6 +177,26 @@ async def stripe_webhook(request: Request) -> Response:
             db.table("businesses").update(updates).eq("id", business_id).execute()
             logger.info("Activated subscription for business %s", business_id)
 
+            # Auto-provision a dedicated Twilio number for this business
+            try:
+                from app.services.twilio_sms import provision_uk_number
+                http = request.app.state.http_client
+                result = await provision_uk_number(http)
+                if result:
+                    db.table("businesses").update({
+                        "twilio_number": result["phone_number"],
+                        "twilio_number_sid": result["sid"],
+                    }).eq("id", business_id).execute()
+                    logger.info(
+                        "Provisioned Twilio number %s for business %s",
+                        result["phone_number"], business_id,
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to provision Twilio number for business %s (will use global fallback)",
+                    business_id,
+                )
+
     # ── Subscription deleted / cancelled ──
     elif event["type"] in (
         "customer.subscription.deleted",
@@ -185,8 +205,20 @@ async def stripe_webhook(request: Request) -> Response:
         sub = event["data"]["object"]
         business_id = sub.get("metadata", {}).get("business_id")
         if business_id:
+            # Release the per-business Twilio number if one was provisioned
+            biz_row = db.table("businesses").select("twilio_number_sid").eq("id", business_id).execute()
+            tw_sid = (biz_row.data[0].get("twilio_number_sid") if biz_row.data else "")
+            if tw_sid:
+                try:
+                    from app.services.twilio_sms import release_number
+                    http = request.app.state.http_client
+                    await release_number(http, tw_sid)
+                except Exception:
+                    logger.exception("Failed to release Twilio number for business %s", business_id)
+
             db.table("businesses").update(
-                {"subscription_status": "inactive", "stripe_subscription_id": ""}
+                {"subscription_status": "inactive", "stripe_subscription_id": "",
+                 "twilio_number": "", "twilio_number_sid": ""}
             ).eq("id", business_id).execute()
             logger.info("Deactivated subscription for business %s", business_id)
 

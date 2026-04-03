@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS businesses (
     currency             TEXT NOT NULL DEFAULT 'GBP',
     confirm_before_send  INTEGER NOT NULL DEFAULT 0,
     vat_registered       INTEGER NOT NULL DEFAULT 0,
+    twilio_number        TEXT NOT NULL DEFAULT '',
+    twilio_number_sid    TEXT NOT NULL DEFAULT '',
     brand_color          TEXT NOT NULL DEFAULT '#16a34a',
     logo_url             TEXT NOT NULL DEFAULT '',
     followup_enabled     INTEGER NOT NULL DEFAULT 1,
@@ -281,6 +283,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # VAT registration flag
     if "vat_registered" not in biz_cols:
         conn.execute("ALTER TABLE businesses ADD COLUMN vat_registered INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+
+    # Per-business Twilio number
+    if "twilio_number" not in biz_cols:
+        conn.execute("ALTER TABLE businesses ADD COLUMN twilio_number TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE businesses ADD COLUMN twilio_number_sid TEXT NOT NULL DEFAULT ''")
         conn.commit()
 
 

@@ -25,8 +25,13 @@ async def send_sms(
     client: httpx.AsyncClient,
     to_phone: str,
     body: str,
+    from_number: str = "",
 ) -> dict[str, Any]:
-    """Send an SMS via Twilio. to_phone should be E.164 format."""
+    """Send an SMS via Twilio. to_phone should be E.164 format.
+
+    If *from_number* is supplied (per-business Twilio number) it is used as
+    the sender; otherwise the global TWILIO_PHONE_NUMBER is used.
+    """
     settings = get_settings()
 
     if not settings.twilio_account_sid:
@@ -39,7 +44,7 @@ async def send_sms(
 
     payload = {
         "To": to_phone,
-        "From": settings.twilio_phone_number,
+        "From": from_number or settings.twilio_phone_number,
         "Body": body,
     }
 

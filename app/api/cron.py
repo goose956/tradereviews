@@ -504,8 +504,13 @@ async def send_follow_ups(request: Request) -> dict[str, Any]:
                 continue
 
             phone = cust["phone_number"].lstrip("+")
+            twilio_num = biz.get("twilio_number", "")
             try:
-                await send_text_message(http_client, phone, body)
+                if twilio_num:
+                    from app.services.sms_service import send_sms
+                    await send_sms(http_client, cust["phone_number"], body, from_number=twilio_num)
+                else:
+                    await send_text_message(http_client, phone, body)
                 supabase.table("customers").update({
                     "followup_count": followup_count + 1,
                     "last_followup_at": now.isoformat(),
