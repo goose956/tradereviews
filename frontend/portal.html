@@ -292,6 +292,13 @@
           <p class="text-xs text-gray-400">When enabled, you'll see a preview in WhatsApp with Send/Cancel buttons before anything goes to the customer.</p>
         </div>
       </div>
+      <div class="flex items-center gap-3 mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+        <input type="checkbox" id="fVatRegistered" class="h-5 w-5 text-green-600 rounded focus:ring-green-500" />
+        <div>
+          <label for="fVatRegistered" class="text-sm font-medium text-gray-700 cursor-pointer">I am VAT registered</label>
+          <p class="text-xs text-gray-400">UK VAT threshold is £90,000. Tick this if you charge VAT on invoices. This controls whether VAT columns appear in your tax exports.</p>
+        </div>
+      </div>
       <div class="grid sm:grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Tax Label</label>
@@ -792,7 +799,7 @@
           <p class="text-2xl font-bold text-blue-600" id="taxNetProfit">£0.00</p>
           <p class="text-xs text-gray-500 mt-1">Net Profit</p>
         </div>
-        <div class="bg-white rounded-lg shadow p-5 text-center">
+        <div class="bg-white rounded-lg shadow p-5 text-center taxVat">
           <p class="text-2xl font-bold text-purple-600" id="taxVatPosition">£0.00</p>
           <p class="text-xs text-gray-500 mt-1">VAT Position</p>
         </div>
@@ -804,7 +811,7 @@
           <h4 class="font-bold text-sm text-gray-600 uppercase mb-3">💰 Income Breakdown</h4>
           <div class="space-y-2 text-sm">
             <div class="flex justify-between"><span class="text-gray-600">Total Paid</span><span class="font-medium" id="taxIncomeTotal">£0.00</span></div>
-            <div class="flex justify-between"><span class="text-gray-600">VAT Collected</span><span class="font-medium" id="taxIncomeVat">£0.00</span></div>
+            <div class="flex justify-between taxVat"><span class="text-gray-600">VAT Collected</span><span class="font-medium" id="taxIncomeVat">£0.00</span></div>
             <div class="flex justify-between"><span class="text-gray-600">Outstanding</span><span class="font-medium text-yellow-600" id="taxIncomeOutstanding">£0.00</span></div>
             <div class="flex justify-between"><span class="text-gray-600">Invoices</span><span class="font-medium" id="taxIncomeCount">0</span></div>
           </div>
@@ -813,7 +820,7 @@
           <h4 class="font-bold text-sm text-gray-600 uppercase mb-3">🧾 Expenses Breakdown</h4>
           <div class="space-y-2 text-sm">
             <div class="flex justify-between"><span class="text-gray-600">Total Spent</span><span class="font-medium" id="taxExpTotal">£0.00</span></div>
-            <div class="flex justify-between"><span class="text-gray-600">VAT Reclaimable</span><span class="font-medium" id="taxExpVat">£0.00</span></div>
+            <div class="flex justify-between taxVat"><span class="text-gray-600">VAT Reclaimable</span><span class="font-medium" id="taxExpVat">£0.00</span></div>
             <div class="flex justify-between"><span class="text-gray-600">Receipts</span><span class="font-medium" id="taxExpCount">0</span></div>
           </div>
         </div>
@@ -1053,6 +1060,8 @@ async function loadBusiness() {
   document.getElementById('fCity').value = biz.business_city || '';
   document.getElementById('fPostcode').value = biz.business_postcode || '';
   document.getElementById('fCountry').value = biz.business_country || 'GB';
+  document.getElementById('fVatRegistered').checked = !!biz.vat_registered;
+  window._bizVatRegistered = !!biz.vat_registered;
   document.getElementById('fTaxLabel').value = biz.tax_label || 'VAT';
   document.getElementById('fTaxNumber').value = biz.tax_number || '';
   document.getElementById('fTaxRate').value = biz.tax_rate ?? 20;
@@ -1153,6 +1162,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     business_city: document.getElementById('fCity').value.trim(),
     business_postcode: document.getElementById('fPostcode').value.trim(),
     business_country: document.getElementById('fCountry').value,
+    vat_registered: document.getElementById('fVatRegistered').checked,
     tax_label: document.getElementById('fTaxLabel').value,
     tax_number: document.getElementById('fTaxNumber').value.trim(),
     tax_rate: parseFloat(document.getElementById('fTaxRate').value) || 20,
@@ -2077,6 +2087,12 @@ async function loadTaxSummary() {
     document.getElementById('taxExpCount').textContent = d.expenses.receipt_count;
     document.getElementById('taxSummarySection').classList.remove('hidden');
     document.getElementById('taxEmptyState').classList.add('hidden');
+
+    // Show/hide VAT fields based on registration status
+    const showVat = !!window._bizVatRegistered;
+    document.querySelectorAll('.taxVat').forEach(el => {
+      el.style.display = showVat ? '' : 'none';
+    });
   } catch { showToast('Network error loading tax data.', 'error'); }
 }
 

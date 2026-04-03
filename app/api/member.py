@@ -67,6 +67,7 @@ class BusinessUpdate(BaseModel):
     followup_interval_days: int | None = None
     followup_max_count: int | None = None
     followup_message: str | None = None
+    vat_registered: bool | None = None
     brand_color: str | None = None
     logo_url: str | None = None
 

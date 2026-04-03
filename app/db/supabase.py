@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     payment_link         TEXT NOT NULL DEFAULT '',
     currency             TEXT NOT NULL DEFAULT 'GBP',
     confirm_before_send  INTEGER NOT NULL DEFAULT 0,
+    vat_registered       INTEGER NOT NULL DEFAULT 0,
     brand_color          TEXT NOT NULL DEFAULT '#16a34a',
     logo_url             TEXT NOT NULL DEFAULT '',
     followup_enabled     INTEGER NOT NULL DEFAULT 1,
@@ -275,6 +276,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "brand_color" not in biz_cols:
         conn.execute("ALTER TABLE businesses ADD COLUMN brand_color TEXT NOT NULL DEFAULT '#16a34a'")
         conn.execute("ALTER TABLE businesses ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+    # VAT registration flag
+    if "vat_registered" not in biz_cols:
+        conn.execute("ALTER TABLE businesses ADD COLUMN vat_registered INTEGER NOT NULL DEFAULT 0")
         conn.commit()
 
 
