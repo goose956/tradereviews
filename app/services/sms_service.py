@@ -11,15 +11,16 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-def wa_me_link(biz_name: str = "") -> str:
-    """Build a wa.me click-to-chat link with a pre-filled opt-in message."""
+def whatsapp_opt_in_prompt() -> str:
+    """Plain-text prompt asking the customer to save the WhatsApp number."""
     settings = get_settings()
-    number = settings.whatsapp_bot_number.lstrip("+")
+    number = settings.whatsapp_bot_number
     if not number:
         return ""
-    from urllib.parse import quote
-    text = quote(f"Hi, I'd like to receive messages on WhatsApp please")
-    return f"https://wa.me/{number}?text={text}"
+    return (
+        f"\n\nWant updates on WhatsApp? "
+        f"Save {number} to your contacts and send us 'Hi' on WhatsApp."
+    )
 
 
 def _twilio_url() -> str:
@@ -93,9 +94,7 @@ def build_invoice_sms(
         f"PDF: {pdf_url}\n"
         f"Contact: {personal_phone}"
     )
-    link = wa_me_link(biz_name)
-    if link:
-        msg += f"\n\nPrefer WhatsApp? Tap here: {link}"
+    msg += whatsapp_opt_in_prompt()
     return msg
 
 
@@ -119,9 +118,7 @@ def build_quote_sms(
         f"PDF: {pdf_url}\n"
         f"Contact: {personal_phone}"
     )
-    link = wa_me_link(biz_name)
-    if link:
-        msg += f"\n\nPrefer WhatsApp? Tap here: {link}"
+    msg += whatsapp_opt_in_prompt()
     return msg
 
 
@@ -138,7 +135,5 @@ def build_review_sms(
         f"Hi {first_name}, thanks for choosing {biz_name}{job_bit}! "
         f"We'd love your feedback - it only takes 30 secs: {review_link}"
     )
-    link = wa_me_link(biz_name)
-    if link:
-        msg += f"\n\nPrefer WhatsApp? Tap here: {link}"
+    msg += whatsapp_opt_in_prompt()
     return msg

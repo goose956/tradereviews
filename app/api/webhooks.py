@@ -45,8 +45,12 @@ router = APIRouter(prefix="/webhook/whatsapp", tags=["webhook"])
 
 
 def _resolve_channel(channel: str, customer_phone: str, business_id: str) -> str:
-    """Upgrade SMS → WhatsApp if the customer has opted in via wa.me link."""
-    if channel != "sms":
+    """Route to WhatsApp only if customer has opted in, otherwise always SMS.
+
+    - Customer opted in → WhatsApp (regardless of what owner picked)
+    - Customer NOT opted in → SMS (even if owner picked WhatsApp)
+    """
+    if channel == "email":
         return channel
     supabase = get_supabase()
     cust = (
@@ -1604,7 +1608,9 @@ async def _wizard_action_review(
         return
 
     # ── Auto-upgrade SMS → WhatsApp if customer opted in ──
+    original_channel = channel
     channel = _resolve_channel(channel, customer_phone, business["id"])
+    wa_auth_requested = (original_channel != "email" and channel == "sms")
 
     # ── Content moderation check ──
     mod_warning = await moderate_outbound(f"{biz_name} {job_desc}")
@@ -1670,9 +1676,15 @@ async def _wizard_action_review(
     )
 
     _wizard_end_session(sender)
+    wa_note = ""
+    if wa_auth_requested:
+        wa_note = (
+            "\n\n\U0001f4f2 WhatsApp authorisation requested — "
+            f"once {customer_name} opts in, we'll send via WhatsApp automatically."
+        )
     await send_text_message(
         client, sender,
-        f"\u2705 Review request sent to *{customer_name}* ({sent_via})!\n\n"
+        f"\u2705 Review request sent to *{customer_name}* ({sent_via})!{wa_note}\n\n"
         f"Session ended. Type /START for a new session.",
     )
 
@@ -1995,7 +2007,9 @@ async def _send_invoice_to_customer(
         return
 
     # ── Auto-upgrade SMS → WhatsApp if customer opted in ──
+    original_channel = channel
     channel = _resolve_channel(channel, customer_phone, business["id"])
+    wa_auth_requested = (original_channel != "email" and channel == "sms")
 
     # ── Content moderation check ──
     mod_warning = await moderate_outbound(f"{description} {biz_name}")
@@ -2062,10 +2076,16 @@ async def _send_invoice_to_customer(
         message_type="invoice",
     )
 
+    wa_note = ""
+    if wa_auth_requested:
+        wa_note = (
+            "\n\n\U0001f4f2 WhatsApp authorisation requested \u2014 "
+            f"once {customer_name} opts in, we'll send via WhatsApp automatically."
+        )
     await send_text_message(
         client, sender,
         f"\u2705 Invoice {invoice_number} sent to {customer_name} "
-        f"({sent_via}).\n\n"
+        f"({sent_via}).{wa_note}\n\n"
         f"\u2022 {description}: {sym}{total:.2f} (inc. VAT)\n\n"
         f"Session ended. Type /START for a new session.",
     )
@@ -2241,7 +2261,9 @@ async def _send_quote_to_customer(
         return
 
     # ── Auto-upgrade SMS → WhatsApp if customer opted in ──
+    original_channel = channel
     channel = _resolve_channel(channel, customer_phone, business["id"])
+    wa_auth_requested = (original_channel != "email" and channel == "sms")
 
     # ── Content moderation check ──
     mod_warning = await moderate_outbound(f"{description} {biz_name}")
@@ -2308,10 +2330,16 @@ async def _send_quote_to_customer(
         message_type="quote",
     )
 
+    wa_note = ""
+    if wa_auth_requested:
+        wa_note = (
+            "\n\n\U0001f4f2 WhatsApp authorisation requested \u2014 "
+            f"once {customer_name} opts in, we'll send via WhatsApp automatically."
+        )
     await send_text_message(
         client, sender,
         f"\u2705 Quote {quote_number} sent to {customer_name} "
-        f"({sent_via}).\n\n"
+        f"({sent_via}).{wa_note}\n\n"
         f"\u2022 {description}: {sym}{total:.2f} (inc. VAT)\n"
         f"\u2022 Valid until {valid_until}\n\n"
         f"Session ended. Type /START for a new session.",
