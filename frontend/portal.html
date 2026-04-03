@@ -97,6 +97,7 @@
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="expenses">Expenses</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="bookings">Bookings</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="accounts">Accounts</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="tax">Tax Export</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="drafts">Drafts</button>
       <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="subscription">Subscription</button>
     </div>
@@ -742,6 +743,101 @@
         <tbody id="acctInvoicesBody" class="divide-y divide-gray-100"></tbody>
       </table>
       <p id="noAcctInvoices" class="hidden text-center text-gray-400 py-8">No invoices yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab: Tax Export ───── -->
+  <section id="panel-tax" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+
+    <!-- Info Banner -->
+    <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 text-sm text-amber-800">
+      <strong>📋 Making Tax Digital (MTD)</strong> — From April 2026 HMRC requires digital records for self-employed income over £50k.
+      GafferApp keeps your records MTD-ready. Export your quarterly data below and import it into your MTD-compatible software (FreeAgent, Xero, QuickBooks, etc).
+    </div>
+
+    <!-- Quarter Picker -->
+    <div class="bg-white rounded-lg shadow p-6 mb-6">
+      <h3 class="font-bold text-sm text-gray-600 uppercase mb-4">Select Tax Quarter</h3>
+      <div class="flex flex-wrap items-end gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Tax Year Starting</label>
+          <select id="taxYear" class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-green-500 focus:border-green-500">
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Quarter</label>
+          <select id="taxQuarter" class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-green-500 focus:border-green-500">
+            <option value="1">Q1 — 6 Apr to 5 Jul</option>
+            <option value="2">Q2 — 6 Jul to 5 Oct</option>
+            <option value="3">Q3 — 6 Oct to 5 Jan</option>
+            <option value="4">Q4 — 6 Jan to 5 Apr</option>
+          </select>
+        </div>
+        <button onclick="loadTaxSummary()" class="bg-green-600 hover:bg-green-700 text-white font-medium text-sm px-5 py-2 rounded-md transition">Load Summary</button>
+      </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div id="taxSummarySection" class="hidden">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-lg shadow p-5 text-center">
+          <p class="text-2xl font-bold text-green-700" id="taxIncome">£0.00</p>
+          <p class="text-xs text-gray-500 mt-1">Income (Paid)</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-5 text-center">
+          <p class="text-2xl font-bold text-red-600" id="taxExpenses">£0.00</p>
+          <p class="text-xs text-gray-500 mt-1">Expenses</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-5 text-center">
+          <p class="text-2xl font-bold text-blue-600" id="taxNetProfit">£0.00</p>
+          <p class="text-xs text-gray-500 mt-1">Net Profit</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-5 text-center">
+          <p class="text-2xl font-bold text-purple-600" id="taxVatPosition">£0.00</p>
+          <p class="text-xs text-gray-500 mt-1">VAT Position</p>
+        </div>
+      </div>
+
+      <!-- Detail Rows -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <div class="bg-white rounded-lg shadow p-5">
+          <h4 class="font-bold text-sm text-gray-600 uppercase mb-3">💰 Income Breakdown</h4>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between"><span class="text-gray-600">Total Paid</span><span class="font-medium" id="taxIncomeTotal">£0.00</span></div>
+            <div class="flex justify-between"><span class="text-gray-600">VAT Collected</span><span class="font-medium" id="taxIncomeVat">£0.00</span></div>
+            <div class="flex justify-between"><span class="text-gray-600">Outstanding</span><span class="font-medium text-yellow-600" id="taxIncomeOutstanding">£0.00</span></div>
+            <div class="flex justify-between"><span class="text-gray-600">Invoices</span><span class="font-medium" id="taxIncomeCount">0</span></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-lg shadow p-5">
+          <h4 class="font-bold text-sm text-gray-600 uppercase mb-3">🧾 Expenses Breakdown</h4>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between"><span class="text-gray-600">Total Spent</span><span class="font-medium" id="taxExpTotal">£0.00</span></div>
+            <div class="flex justify-between"><span class="text-gray-600">VAT Reclaimable</span><span class="font-medium" id="taxExpVat">£0.00</span></div>
+            <div class="flex justify-between"><span class="text-gray-600">Receipts</span><span class="font-medium" id="taxExpCount">0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Download Buttons -->
+      <div class="bg-white rounded-lg shadow p-6">
+        <h4 class="font-bold text-sm text-gray-600 uppercase mb-4">📥 Download for MTD Software</h4>
+        <p class="text-sm text-gray-500 mb-4">Import these CSV files into FreeAgent, Xero, QuickBooks, Sage or any MTD-compatible software.</p>
+        <div class="flex flex-wrap gap-3">
+          <button onclick="downloadTaxCSV('income')" class="flex items-center gap-2 bg-green-100 hover:bg-green-200 text-green-700 font-medium text-sm px-5 py-2.5 rounded-md transition">
+            <span>💰</span> Download Income CSV
+          </button>
+          <button onclick="downloadTaxCSV('expenses')" class="flex items-center gap-2 bg-red-100 hover:bg-red-200 text-red-700 font-medium text-sm px-5 py-2.5 rounded-md transition">
+            <span>🧾</span> Download Expenses CSV
+          </button>
+        </div>
+        <p class="text-xs text-gray-400 mt-3">CSVs include: Date, Description, Category, Net Amount, VAT, Total — compatible with all major UK accounting software.</p>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="taxEmptyState" class="bg-white rounded-lg shadow p-8 text-center text-gray-400">
+      Select a tax year and quarter above, then click <strong>Load Summary</strong> to see your data.
     </div>
   </section>
 
@@ -1941,6 +2037,68 @@ async function deleteExpense(expenseId) {
       showToast('Failed to delete expense.', 'error');
     }
   } catch { showToast('Network error.', 'error'); }
+}
+
+// ── Tax Export ─────────────────────────────────────
+function initTaxYearPicker() {
+  const sel = document.getElementById('taxYear');
+  if (!sel) return;
+  const now = new Date();
+  // Current tax year starts in April — if before April, current year-1
+  const curTaxYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  sel.innerHTML = '';
+  for (let y = curTaxYear; y >= curTaxYear - 3; y--) {
+    const opt = document.createElement('option');
+    opt.value = y;
+    opt.textContent = `${y}/${y + 1}`;
+    sel.appendChild(opt);
+  }
+}
+initTaxYearPicker();
+
+async function loadTaxSummary() {
+  const year = document.getElementById('taxYear').value;
+  const quarter = document.getElementById('taxQuarter').value;
+  try {
+    const res = await authFetch(`${API}/tax/summary?year=${year}&quarter=${quarter}`);
+    if (!res.ok) { showToast('Failed to load tax data.', 'error'); return; }
+    const d = await res.json();
+    const c = cs();
+    document.getElementById('taxIncome').textContent = `${c}${d.income.total_paid.toFixed(2)}`;
+    document.getElementById('taxExpenses').textContent = `${c}${d.expenses.total.toFixed(2)}`;
+    document.getElementById('taxNetProfit').textContent = `${c}${d.net_profit.toFixed(2)}`;
+    document.getElementById('taxVatPosition').textContent = `${c}${d.vat_position.toFixed(2)}`;
+    document.getElementById('taxIncomeTotal').textContent = `${c}${d.income.total_paid.toFixed(2)}`;
+    document.getElementById('taxIncomeVat').textContent = `${c}${d.income.vat_collected.toFixed(2)}`;
+    document.getElementById('taxIncomeOutstanding').textContent = `${c}${d.income.total_outstanding.toFixed(2)}`;
+    document.getElementById('taxIncomeCount').textContent = d.income.invoice_count;
+    document.getElementById('taxExpTotal').textContent = `${c}${d.expenses.total.toFixed(2)}`;
+    document.getElementById('taxExpVat').textContent = `${c}${d.expenses.vat_reclaimable.toFixed(2)}`;
+    document.getElementById('taxExpCount').textContent = d.expenses.receipt_count;
+    document.getElementById('taxSummarySection').classList.remove('hidden');
+    document.getElementById('taxEmptyState').classList.add('hidden');
+  } catch { showToast('Network error loading tax data.', 'error'); }
+}
+
+function downloadTaxCSV(type) {
+  const year = document.getElementById('taxYear').value;
+  const quarter = document.getElementById('taxQuarter').value;
+  const endpoint = type === 'income' ? 'income-csv' : 'expenses-csv';
+  // Use authFetch to include token, then trigger download
+  authFetch(`${API}/tax/${endpoint}?year=${year}&quarter=${quarter}`)
+    .then(res => {
+      if (!res.ok) throw new Error();
+      return res.blob();
+    })
+    .then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${type}_Q${quarter}_${year}-${parseInt(year)+1}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast(`${type === 'income' ? 'Income' : 'Expenses'} CSV downloaded!`, 'success');
+    })
+    .catch(() => showToast('Failed to download CSV.', 'error'));
 }
 
 // ── Bookings ─────────────────────────────────────

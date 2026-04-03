@@ -1051,6 +1051,187 @@ async def get_receipt_image(business_id: str, expense_id: str):
     )
 
 
+# ── Tax / MTD export endpoints ────────────────────────
+
+import csv
+import io
+from datetime import datetime
+
+
+def _quarter_range(year: int, quarter: int) -> tuple[str, str]:
+    """Return (start_date, end_date) strings for a UK tax quarter.
+
+    UK tax year runs 6 Apr – 5 Apr.  Standard MTD quarterly periods:
+      Q1: 6 Apr – 5 Jul    Q2: 6 Jul – 5 Oct
+      Q3: 6 Oct – 5 Jan    Q4: 6 Jan – 5 Apr
+    """
+    ranges = {
+        1: (f"{year}-04-06", f"{year}-07-05"),
+        2: (f"{year}-07-06", f"{year}-10-05"),
+        3: (f"{year}-10-06", f"{year + 1}-01-05"),
+        4: (f"{year + 1}-01-06", f"{year + 1}-04-05"),
+    }
+    return ranges[quarter]
+
+
+@router.get("/business/{business_id}/tax/summary")
+async def tax_quarter_summary(business_id: str, year: int, quarter: int):
+    """Return a JSON summary of income & expenses for a UK tax quarter."""
+    if quarter not in (1, 2, 3, 4):
+        raise HTTPException(400, "quarter must be 1-4")
+    start, end = _quarter_range(year, quarter)
+    db = get_supabase()
+
+    invoices = (
+        db.table("invoices").select("*")
+        .eq("business_id", business_id)
+        .gte("created_at", start)
+        .lte("created_at", end + "T23:59:59")
+        .execute()
+    ).data or []
+
+    expenses = (
+        db.table("expenses").select("*")
+        .eq("business_id", business_id)
+        .gte("date", start)
+        .lte("date", end)
+        .execute()
+    ).data or []
+
+    total_income = sum(i.get("total", 0) for i in invoices if i.get("status") == "paid")
+    total_income_vat = sum(i.get("tax_amount", 0) for i in invoices if i.get("status") == "paid")
+    total_outstanding = sum(i.get("total", 0) for i in invoices if i.get("status") not in ("paid", "cancelled"))
+    total_expenses = sum(e.get("total", 0) for e in expenses)
+    total_expenses_vat = sum(e.get("tax_amount", 0) for e in expenses)
+
+    return {
+        "year": year,
+        "quarter": quarter,
+        "period": f"{start} to {end}",
+        "income": {
+            "total_paid": round(total_income, 2),
+            "vat_collected": round(total_income_vat, 2),
+            "total_outstanding": round(total_outstanding, 2),
+            "invoice_count": len(invoices),
+        },
+        "expenses": {
+            "total": round(total_expenses, 2),
+            "vat_reclaimable": round(total_expenses_vat, 2),
+            "receipt_count": len(expenses),
+        },
+        "net_profit": round(total_income - total_expenses, 2),
+        "vat_position": round(total_income_vat - total_expenses_vat, 2),
+    }
+
+
+@router.get("/business/{business_id}/tax/income-csv")
+async def export_income_csv(business_id: str, year: int, quarter: int):
+    """Download a CSV of paid invoices for a UK tax quarter."""
+    if quarter not in (1, 2, 3, 4):
+        raise HTTPException(400, "quarter must be 1-4")
+    start, end = _quarter_range(year, quarter)
+    db = get_supabase()
+
+    invoices = (
+        db.table("invoices").select("*")
+        .eq("business_id", business_id)
+        .gte("created_at", start)
+        .lte("created_at", end + "T23:59:59")
+        .order("created_at")
+        .execute()
+    ).data or []
+
+    # Build customer name map
+    cust_ids = list({i["customer_id"] for i in invoices if i.get("customer_id")})
+    cust_map: dict[str, str] = {}
+    for cid in cust_ids:
+        c = db.table("customers").select("name").eq("id", cid).execute()
+        if c.data:
+            cust_map[cid] = c.data[0]["name"]
+
+    # Fetch line items for each invoice
+    inv_descs: dict[str, str] = {}
+    for inv in invoices:
+        items = (
+            db.table("line_items").select("description")
+            .eq("parent_id", inv["id"]).eq("parent_type", "invoice").execute()
+        ).data or []
+        inv_descs[inv["id"]] = "; ".join(it["description"] for it in items if it.get("description"))
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Date", "Invoice Number", "Customer", "Description", "Net Amount", "VAT", "Total", "Status", "Payment Method", "Currency"])
+    for inv in invoices:
+        date = (inv.get("paid_at") or inv.get("created_at", ""))[:10]
+        writer.writerow([
+            date,
+            inv.get("invoice_number", ""),
+            cust_map.get(inv.get("customer_id", ""), ""),
+            inv_descs.get(inv["id"], ""),
+            inv.get("subtotal", 0),
+            inv.get("tax_amount", 0),
+            inv.get("total", 0),
+            inv.get("status", ""),
+            inv.get("payment_method", ""),
+            inv.get("currency", "GBP"),
+        ])
+
+    filename = f"income_Q{quarter}_{year}-{year + 1}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/business/{business_id}/tax/expenses-csv")
+async def export_expenses_csv(business_id: str, year: int, quarter: int):
+    """Download a CSV of expenses for a UK tax quarter."""
+    if quarter not in (1, 2, 3, 4):
+        raise HTTPException(400, "quarter must be 1-4")
+    start, end = _quarter_range(year, quarter)
+    db = get_supabase()
+
+    expenses = (
+        db.table("expenses").select("*")
+        .eq("business_id", business_id)
+        .gte("date", start)
+        .lte("date", end)
+        .order("date")
+        .execute()
+    ).data or []
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Date", "Vendor", "Description", "Category", "Net Amount", "VAT", "Total", "Currency"])
+    for exp in expenses:
+        desc = exp.get("description", "")
+        if not desc:
+            try:
+                import json
+                rd = json.loads(exp.get("receipt_data", "{}"))
+                desc = rd.get("description", "")
+            except Exception:
+                pass
+        writer.writerow([
+            exp.get("date", ""),
+            exp.get("vendor", ""),
+            desc,
+            exp.get("category", ""),
+            exp.get("subtotal", 0),
+            exp.get("tax_amount", 0),
+            exp.get("total", 0),
+            exp.get("currency", "GBP"),
+        ])
+
+    filename = f"expenses_Q{quarter}_{year}-{year + 1}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ── Booking endpoints ────────────────────────────────
 
 @router.get("/business/{business_id}/bookings")
