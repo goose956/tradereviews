@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     whatsapp_token: str = ""
     whatsapp_phone_number_id: str = ""
     whatsapp_verify_token: str = ""
+    whatsapp_bot_number: str = ""      # Actual E.164 number for wa.me links
 
     # Google OAuth
     google_client_id: str = ""

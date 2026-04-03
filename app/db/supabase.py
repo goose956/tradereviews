@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS customers (
     status              TEXT NOT NULL DEFAULT 'request_sent',
     followup_count      INTEGER NOT NULL DEFAULT 0,
     last_followup_at    TEXT,
+    whatsapp_opted_in   INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT NOT NULL
 );
 
@@ -261,6 +262,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Follow-up columns on customers
     cust_cur = conn.execute("PRAGMA table_info(customers)")
     cust_cols = {row[1] for row in cust_cur.fetchall()}
+    if "whatsapp_opted_in" not in cust_cols:
+        conn.execute("ALTER TABLE customers ADD COLUMN whatsapp_opted_in INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        # Re-read after migration
+        cust_cur = conn.execute("PRAGMA table_info(customers)")
+        cust_cols = {row[1] for row in cust_cur.fetchall()}
     if "followup_count" not in cust_cols:
         conn.execute("ALTER TABLE customers ADD COLUMN followup_count INTEGER NOT NULL DEFAULT 0")
         conn.execute("ALTER TABLE customers ADD COLUMN last_followup_at TEXT")

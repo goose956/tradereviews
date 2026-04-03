@@ -11,6 +11,17 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+def wa_me_link(biz_name: str = "") -> str:
+    """Build a wa.me click-to-chat link with a pre-filled opt-in message."""
+    settings = get_settings()
+    number = settings.whatsapp_bot_number.lstrip("+")
+    if not number:
+        return ""
+    from urllib.parse import quote
+    text = quote(f"Hi, I'd like to receive messages on WhatsApp please")
+    return f"https://wa.me/{number}?text={text}"
+
+
 def _twilio_url() -> str:
     settings = get_settings()
     return f"https://api.twilio.com/2010-04-01/Accounts/{settings.twilio_account_sid}/Messages.json"
@@ -76,12 +87,16 @@ def build_invoice_sms(
     personal_phone: str,
 ) -> str:
     """Build a plain-text SMS for an invoice."""
-    return (
+    msg = (
         f"Hi {first_name}, invoice {invoice_number} from {biz_name}:\n"
         f"{description} - {sym}{total:.2f} (inc. VAT)\n"
         f"PDF: {pdf_url}\n"
         f"Contact: {personal_phone}"
     )
+    link = wa_me_link(biz_name)
+    if link:
+        msg += f"\n\nPrefer WhatsApp? Tap here: {link}"
+    return msg
 
 
 def build_quote_sms(
@@ -97,13 +112,17 @@ def build_quote_sms(
     personal_phone: str,
 ) -> str:
     """Build a plain-text SMS for a quote."""
-    return (
+    msg = (
         f"Hi {first_name}, quote {quote_number} from {biz_name}:\n"
         f"{description} - {sym}{total:.2f} (inc. VAT)\n"
         f"Valid until {valid_until}\n"
         f"PDF: {pdf_url}\n"
         f"Contact: {personal_phone}"
     )
+    link = wa_me_link(biz_name)
+    if link:
+        msg += f"\n\nPrefer WhatsApp? Tap here: {link}"
+    return msg
 
 
 def build_review_sms(
@@ -115,7 +134,11 @@ def build_review_sms(
 ) -> str:
     """Build a plain-text SMS for a review request."""
     job_bit = f" for the {job_description}" if job_description else ""
-    return (
+    msg = (
         f"Hi {first_name}, thanks for choosing {biz_name}{job_bit}! "
         f"We'd love your feedback - it only takes 30 secs: {review_link}"
     )
+    link = wa_me_link(biz_name)
+    if link:
+        msg += f"\n\nPrefer WhatsApp? Tap here: {link}"
+    return msg

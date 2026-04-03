@@ -43,6 +43,25 @@ from app.services.moderation import moderate_outbound
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook/whatsapp", tags=["webhook"])
 
+
+def _resolve_channel(channel: str, customer_phone: str, business_id: str) -> str:
+    """Upgrade SMS → WhatsApp if the customer has opted in via wa.me link."""
+    if channel != "sms":
+        return channel
+    supabase = get_supabase()
+    cust = (
+        supabase.table("customers")
+        .select("whatsapp_opted_in")
+        .eq("business_id", business_id)
+        .eq("phone_number", customer_phone)
+        .limit(1)
+        .execute()
+    )
+    if cust.data and cust.data[0].get("whatsapp_opted_in"):
+        return "whatsapp"
+    return "sms"
+
+
 # ──────────────────────────────────────────────
 # Message deduplication (prevent duplicate webhook processing)
 # ──────────────────────────────────────────────
@@ -1584,6 +1603,9 @@ async def _wizard_action_review(
         )
         return
 
+    # ── Auto-upgrade SMS → WhatsApp if customer opted in ──
+    channel = _resolve_channel(channel, customer_phone, business["id"])
+
     # ── Content moderation check ──
     mod_warning = await moderate_outbound(f"{biz_name} {job_desc}")
     if mod_warning:
@@ -1972,6 +1994,9 @@ async def _send_invoice_to_customer(
             _wizard_end_session(sender)
         return
 
+    # ── Auto-upgrade SMS → WhatsApp if customer opted in ──
+    channel = _resolve_channel(channel, customer_phone, business["id"])
+
     # ── Content moderation check ──
     mod_warning = await moderate_outbound(f"{description} {biz_name}")
     if mod_warning:
@@ -2214,6 +2239,9 @@ async def _send_quote_to_customer(
         else:
             _wizard_end_session(sender)
         return
+
+    # ── Auto-upgrade SMS → WhatsApp if customer opted in ──
+    channel = _resolve_channel(channel, customer_phone, business["id"])
 
     # ── Content moderation check ──
     mod_warning = await moderate_outbound(f"{description} {biz_name}")
@@ -2906,12 +2934,12 @@ async def _handle_image(
 async def _handle_customer_text(
     sender: str, sender_e164: str, text: str, client: httpx.AsyncClient
 ) -> None:
-    """Customer texted the bot — tell them to contact the tradesperson directly."""
+    """Customer texted the bot — detect WhatsApp opt-in or tell them to contact tradesperson."""
     supabase = get_supabase()
 
     cust_result = (
         supabase.table("customers")
-        .select("id, business_id, name")
+        .select("id, business_id, name, whatsapp_opted_in")
         .eq("phone_number", sender_e164)
         .order("created_at", desc=True)
         .limit(1)
@@ -2941,6 +2969,21 @@ async def _handle_customer_text(
     biz = biz_result.data
     biz_name = biz.get("business_name", "your tradesperson")
     personal_phone = _format_phone_display(biz.get("phone_number", ""))
+
+    # ── WhatsApp opt-in detection ──
+    if not customer.get("whatsapp_opted_in"):
+        supabase.table("customers").update(
+            {"whatsapp_opted_in": 1}
+        ).eq("id", customer["id"]).execute()
+        logger.info("Customer %s opted in to WhatsApp for biz %s", sender_e164, customer["business_id"])
+        await send_text_message(
+            client, sender,
+            f"✅ Got it! You'll now receive messages from {biz_name} "
+            f"here on WhatsApp instead of SMS.\n\n"
+            f"To chat about your job, contact them directly on:\n"
+            f"📱 *{personal_phone}*",
+        )
+        return
 
     await send_text_message(
         client, sender,

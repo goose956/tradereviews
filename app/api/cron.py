@@ -466,7 +466,7 @@ async def send_follow_ups(request: Request) -> dict[str, Any]:
         # Find customers eligible for a follow-up
         candidates = (
             supabase.table("customers")
-            .select("id, name, phone_number, review_requested_at, followup_count, last_followup_at")
+            .select("id, name, phone_number, review_requested_at, followup_count, last_followup_at, whatsapp_opted_in")
             .eq("business_id", biz["id"])
             .neq("status", "review_posted")
             .execute()
@@ -505,8 +505,12 @@ async def send_follow_ups(request: Request) -> dict[str, Any]:
 
             phone = cust["phone_number"].lstrip("+")
             twilio_num = biz.get("twilio_number", "")
+            opted_in = cust.get("whatsapp_opted_in", 0)
             try:
-                if twilio_num:
+                if opted_in:
+                    # Customer opted in — send via WhatsApp
+                    await send_text_message(http_client, phone, body)
+                elif twilio_num:
                     from app.services.sms_service import send_sms
                     await send_sms(http_client, cust["phone_number"], body, from_number=twilio_num)
                 else:
