@@ -54,11 +54,16 @@ async def send_sms(
     if not to_phone.startswith("+"):
         to_phone = f"+{to_phone}"
 
-    payload = {
+    payload: dict[str, str] = {
         "To": to_phone,
-        "From": from_number or settings.twilio_phone_number,
         "Body": body,
     }
+
+    # Prefer Messaging Service (alphanumeric sender) over raw phone number
+    if settings.twilio_messaging_service_sid and not from_number:
+        payload["MessagingServiceSid"] = settings.twilio_messaging_service_sid
+    else:
+        payload["From"] = from_number or settings.twilio_phone_number
 
     sid = settings.twilio_account_sid
     token = settings.twilio_auth_token

@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
+    twilio_messaging_service_sid: str = ""  # Alphanumeric sender (e.g. "GafferApp")
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
