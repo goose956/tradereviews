@@ -501,7 +501,7 @@ async def _maybe_handle_demo(
     _wizard_sessions[sender] = {
         "state": "awaiting_customer_pick",
         "business_id": biz_id,
-        "channel": "whatsapp",
+        "channel": "sms",
     }
     _start_timeout(sender, client)
 
@@ -943,7 +943,7 @@ _CHANNEL_LABELS = {
 }
 
 
-def _action_menu_rows(channel: str = "whatsapp", sender: str = "") -> list[dict]:
+def _action_menu_rows(channel: str = "sms", sender: str = "") -> list[dict]:
     """Return the interactive-list rows for the action picker."""
     # Demo users get a menu with signup option instead of dashboard/channel
     if sender and sender in _demo_sessions:
@@ -1263,7 +1263,7 @@ async def _wizard_new_customer_input(
     session["customer_phone"] = parsed.phone
     session["customer_name"] = parsed.name
     session["state"] = "choose_action"
-    session.setdefault("channel", "whatsapp")
+    session.setdefault("channel", "sms")
 
     await send_interactive_list(
         client, sender,
@@ -1388,7 +1388,7 @@ async def _wizard_customer_selected(
     session["customer_phone"] = cust["phone_number"]
     session["customer_name"] = cust["name"]
     session["state"] = "choose_action"
-    session.setdefault("channel", "whatsapp")
+    session.setdefault("channel", "sms")
 
     # Demo first-run: skip action menu, go straight to review flow
     demo = _demo_sessions.get(sender)
@@ -1466,7 +1466,7 @@ async def _wizard_action_balance(
     await send_interactive_list(
         client, sender, msg,
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "sms"), sender)}],
     )
 
 
@@ -1553,7 +1553,7 @@ async def _wizard_action_review(
 
     customer_phone = session.get("customer_phone", "")
     customer_name = session.get("customer_name", "Customer")
-    channel = session.get("channel", "whatsapp")
+    channel = session.get("channel", "sms")
     customer_email = session.get("customer_email", "")
 
     supabase = get_supabase()
@@ -1895,7 +1895,7 @@ async def _finalise_invoice(
 
     # Get channel from wizard session
     session = _wizard_sessions.get(sender, {})
-    channel = session.get("channel", "whatsapp")
+    channel = session.get("channel", "sms")
     customer_email = session.get("customer_email", "")
     ch_label = _CHANNEL_LABELS.get(channel, "📱 WhatsApp")
 
@@ -1944,7 +1944,7 @@ async def _send_invoice_to_customer(
     sym: str, customer_name: str, customer_phone: str,
     first_name: str, biz_name: str,
     business: dict[str, Any], client: httpx.AsyncClient,
-    channel: str = "whatsapp", customer_email: str = "",
+    channel: str = "sms", customer_email: str = "",
 ) -> None:
     """Deliver the invoice to the customer and confirm to the tradesperson."""
     supabase = get_supabase()
@@ -2141,7 +2141,7 @@ async def _finalise_quote(
 
     # Get channel from wizard session
     session = _wizard_sessions.get(sender, {})
-    channel = session.get("channel", "whatsapp")
+    channel = session.get("channel", "sms")
     customer_email = session.get("customer_email", "")
     ch_label = _CHANNEL_LABELS.get(channel, "📱 WhatsApp")
 
@@ -2189,7 +2189,7 @@ async def _send_quote_to_customer(
     customer_name: str, customer_phone: str,
     first_name: str, biz_name: str,
     business: dict[str, Any], client: httpx.AsyncClient,
-    channel: str = "whatsapp", customer_email: str = "",
+    channel: str = "sms", customer_email: str = "",
 ) -> None:
     """Deliver the quote to the customer and confirm to the tradesperson."""
     supabase = get_supabase()
@@ -2386,7 +2386,7 @@ async def _wizard_view_expenses(
         client, sender,
         "What would you like to do next?",
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "sms"), sender)}],
     )
 
 
@@ -2452,7 +2452,7 @@ async def _wizard_view_bookings(
         client, sender,
         "What would you like to do next?",
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "sms"), sender)}],
     )
 
 
@@ -2752,7 +2752,7 @@ async def _confirm_booking(sender: str, client: httpx.AsyncClient) -> None:
         client, sender,
         "What would you like to do next?",
         "Choose an option",
-        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
+        [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "sms"), sender)}],
     )
 
     sender_e164 = f"+{sender}" if not sender.startswith("+") else sender
@@ -2903,7 +2903,7 @@ async def _handle_image(
             client, sender,
             "What would you like to do next?",
             "Choose an option",
-            [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "whatsapp"), sender)}],
+            [{"title": "Actions", "rows": _action_menu_rows(session.get("channel", "sms"), sender)}],
         )
 
         log_message(
@@ -3068,7 +3068,7 @@ async def _confirm_send_invoice(
     """User tapped Send on an invoice preview — deliver it now."""
     supabase = get_supabase()
     session = _wizard_sessions.get(sender, {})
-    channel = session.get("channel", "whatsapp")
+    channel = session.get("channel", "sms")
     customer_email = session.get("customer_email", "")
 
     inv_result = supabase.table("invoices").select("*").eq("id", inv_id).execute()
@@ -3129,7 +3129,7 @@ async def _confirm_send_quote(
     """User tapped Send on a quote preview — deliver it now."""
     supabase = get_supabase()
     session = _wizard_sessions.get(sender, {})
-    channel = session.get("channel", "whatsapp")
+    channel = session.get("channel", "sms")
     customer_email = session.get("customer_email", "")
 
     quo_result = supabase.table("quotes").select("*").eq("id", quo_id).execute()
