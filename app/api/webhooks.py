@@ -977,14 +977,10 @@ async def _wizard_start(
     }
     _start_timeout(sender, client)
 
-    settings = get_settings()
-    portal_url = f"{settings.base_url}/portal.html?business_id={business['id']}"
-
     await send_interactive_buttons(
         client, sender,
         "\U0001f44b *Let's get started!*\n\n"
-        "Is this for a new customer or an existing one?\n\n"
-        f"\U0001f4bb Dashboard: {portal_url}",
+        "Is this for a new customer or an existing one?",
         [
             {"id": "wiz_new", "title": "\u2795 New Customer"},
             {"id": "wiz_existing", "title": "\U0001f4cb Existing Customer"},
