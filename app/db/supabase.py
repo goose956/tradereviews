@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS quotes (
     currency        TEXT NOT NULL DEFAULT 'GBP',
     valid_until     TEXT,
     notes           TEXT NOT NULL DEFAULT '',
+    sent_at         TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
@@ -296,6 +297,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "twilio_number" not in biz_cols:
         conn.execute("ALTER TABLE businesses ADD COLUMN twilio_number TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE businesses ADD COLUMN twilio_number_sid TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+    # Add sent_at to quotes (was missing)
+    quo_cols = {r[1] for r in conn.execute("PRAGMA table_info(quotes)").fetchall()}
+    if "sent_at" not in quo_cols:
+        conn.execute("ALTER TABLE quotes ADD COLUMN sent_at TEXT")
         conn.commit()
 
 
