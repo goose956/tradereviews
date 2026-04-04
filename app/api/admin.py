@@ -94,6 +94,24 @@ async def delete_business(business_id: str) -> dict[str, str]:
     return {"status": "deleted"}
 
 
+@router.get("/businesses/{business_id}/invoices")
+async def admin_list_invoices(business_id: str) -> list[dict[str, Any]]:
+    result = get_supabase().table("invoices").select("*").eq("business_id", business_id).order("created_at", desc=True).execute()
+    return result.data or []
+
+
+@router.get("/businesses/{business_id}/quotes")
+async def admin_list_quotes(business_id: str) -> list[dict[str, Any]]:
+    result = get_supabase().table("quotes").select("*").eq("business_id", business_id).order("created_at", desc=True).execute()
+    return result.data or []
+
+
+@router.get("/businesses/{business_id}/messages")
+async def admin_list_messages(business_id: str) -> list[dict[str, Any]]:
+    result = get_supabase().table("messages").select("*").eq("business_id", business_id).order("created_at", desc=True).execute()
+    return result.data or []
+
+
 # ── Customers ────────────────────────────────────────────────
 
 @router.get("/businesses/{business_id}/customers")
