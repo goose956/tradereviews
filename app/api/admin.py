@@ -94,6 +94,27 @@ async def delete_business(business_id: str) -> dict[str, str]:
     return {"status": "deleted"}
 
 
+@router.post("/businesses/{business_id}/reset")
+async def reset_business_data(business_id: str) -> dict[str, str]:
+    """Delete all data for a business but keep the business record itself."""
+    db = get_supabase()
+    # Get child IDs for line_items cleanup
+    invs = db.table("invoices").select("id").eq("business_id", business_id).execute()
+    quos = db.table("quotes").select("id").eq("business_id", business_id).execute()
+    for inv in (invs.data or []):
+        db.table("line_items").delete().eq("parent_id", inv["id"]).eq("parent_type", "invoice").execute()
+    for quo in (quos.data or []):
+        db.table("line_items").delete().eq("parent_id", quo["id"]).eq("parent_type", "quote").execute()
+    db.table("invoices").delete().eq("business_id", business_id).execute()
+    db.table("quotes").delete().eq("business_id", business_id).execute()
+    db.table("messages").delete().eq("business_id", business_id).execute()
+    db.table("expenses").delete().eq("business_id", business_id).execute()
+    db.table("customers").delete().eq("business_id", business_id).execute()
+    db.table("review_drafts").delete().eq("business_id", business_id).execute()
+    db.table("bookings").delete().eq("business_id", business_id).execute()
+    return {"status": "reset"}
+
+
 @router.get("/businesses/{business_id}/invoices")
 async def admin_list_invoices(business_id: str) -> list[dict[str, Any]]:
     result = get_supabase().table("invoices").select("*").eq("business_id", business_id).order("created_at", desc=True).execute()
