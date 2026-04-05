@@ -48,6 +48,10 @@
     }
     .toast-success{background:#16a34a;}
     .toast-error{background:#dc2626;}
+    .sub-tab{padding:6px 16px;font-size:.875rem;font-weight:500;border-radius:9999px;cursor:pointer;transition:all .15s;border:none;outline:none;}
+    .sub-tab-active{background:#16a34a;color:#fff;}
+    .sub-tab:not(.sub-tab-active){background:#f3f4f6;color:#6b7280;}
+    .sub-tab:not(.sub-tab-active):hover{background:#e5e7eb;}
     .scrollbar-hide::-webkit-scrollbar{display:none;}
     .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none;}
   </style>
@@ -89,17 +93,12 @@
   <!-- ───── Tabs ───── -->
   <section class="max-w-5xl mx-auto px-4 sm:px-6 mt-8">
     <div class="flex border-b border-gray-200 gap-1 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 rounded-t-lg tab-active whitespace-nowrap" data-tab="settings">Settings</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="customers">Customers</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="messages">Messages</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="invoices">Invoices</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="quotes">Quotes</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="expenses">Expenses</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="bookings">Bookings</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="accounts">Accounts</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="tax">Tax Export</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="drafts">Drafts</button>
-      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="subscription">Subscription</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 rounded-t-lg tab-active whitespace-nowrap" data-tab="settings">⚙️ Settings</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="customers">👥 Customers</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="jobs">🧰 Jobs</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="money">💷 Money</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="reviews">⭐ Reviews</button>
+      <button class="tab px-3 sm:px-5 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent rounded-t-lg hover:bg-gray-100 whitespace-nowrap" data-tab="subscription">💳 Subscription</button>
     </div>
   </section>
 
@@ -385,6 +384,14 @@
     </div>
   </section>
 
+  <!-- ───── Tab Group: Reviews ───── -->
+  <section id="panel-reviews" class="max-w-5xl mx-auto px-4 sm:px-6 pt-6 hidden">
+    <div class="flex gap-2 mb-2">
+      <button class="sub-tab sub-tab-active" data-subtab="messages" data-parent="reviews">Messages</button>
+      <button class="sub-tab" data-subtab="drafts" data-parent="reviews">Drafts</button>
+    </div>
+  </section>
+
   <!-- ───── Tab: Drafts ───── -->
   <section id="panel-drafts" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
 
@@ -440,6 +447,15 @@
         <tbody id="messagesBody" class="divide-y divide-gray-100"></tbody>
       </table>
       <p id="noMessages" class="hidden text-center text-gray-400 py-8">No messages sent yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab Group: Jobs ───── -->
+  <section id="panel-jobs" class="max-w-5xl mx-auto px-4 sm:px-6 pt-6 hidden">
+    <div class="flex gap-2 mb-2">
+      <button class="sub-tab sub-tab-active" data-subtab="invoices" data-parent="jobs">Invoices</button>
+      <button class="sub-tab" data-subtab="quotes" data-parent="jobs">Quotes</button>
+      <button class="sub-tab" data-subtab="bookings" data-parent="jobs">Bookings</button>
     </div>
   </section>
 
@@ -542,6 +558,15 @@
         <tbody id="quotesBody" class="divide-y divide-gray-100"></tbody>
       </table>
       <p id="noQuotes" class="hidden text-center text-gray-400 py-8">No quotes yet.</p>
+    </div>
+  </section>
+
+  <!-- ───── Tab Group: Money ───── -->
+  <section id="panel-money" class="max-w-5xl mx-auto px-4 sm:px-6 pt-6 hidden">
+    <div class="flex gap-2 mb-2">
+      <button class="sub-tab sub-tab-active" data-subtab="expenses" data-parent="money">Expenses</button>
+      <button class="sub-tab" data-subtab="accounts" data-parent="money">Accounts</button>
+      <button class="sub-tab" data-subtab="tax" data-parent="money">Tax Export</button>
     </div>
   </section>
 
@@ -956,12 +981,45 @@ async function doLogout() {
 }
 
 // ── Tabs ─────────────────────────────────────────
+const subTabGroups = {
+  jobs: ['invoices', 'quotes', 'bookings'],
+  money: ['expenses', 'accounts', 'tax'],
+  reviews: ['messages', 'drafts']
+};
+
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(t => { t.classList.remove('tab-active'); t.classList.add('border-transparent'); });
     tab.classList.add('tab-active'); tab.classList.remove('border-transparent');
     const target = tab.dataset.tab;
+    // Hide all panels
     document.querySelectorAll('[id^="panel-"]').forEach(p => p.classList.add('hidden'));
+    if (subTabGroups[target]) {
+      // Show sub-tab bar + activate first sub-tab
+      document.getElementById('panel-' + target).classList.remove('hidden');
+      const firstSub = subTabGroups[target][0];
+      document.getElementById('panel-' + firstSub).classList.remove('hidden');
+      // Reset sub-tab pill styles
+      document.querySelectorAll('[data-parent="' + target + '"]').forEach((st, i) => {
+        if (i === 0) st.classList.add('sub-tab-active');
+        else st.classList.remove('sub-tab-active');
+      });
+    } else {
+      document.getElementById('panel-' + target).classList.remove('hidden');
+    }
+  });
+});
+
+// ── Sub-tabs ─────────────────────────────────────
+document.querySelectorAll('.sub-tab').forEach(pill => {
+  pill.addEventListener('click', () => {
+    const parent = pill.dataset.parent;
+    const target = pill.dataset.subtab;
+    // Deactivate all sub-tabs in this group
+    document.querySelectorAll('[data-parent="' + parent + '"]').forEach(st => st.classList.remove('sub-tab-active'));
+    pill.classList.add('sub-tab-active');
+    // Hide all sub-panels in this group, show the selected one
+    subTabGroups[parent].forEach(id => document.getElementById('panel-' + id).classList.add('hidden'));
     document.getElementById('panel-' + target).classList.remove('hidden');
   });
 });
