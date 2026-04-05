@@ -384,9 +384,34 @@
     </div>
   </section>
 
+  <!-- ───── Tab Group: Reviews ───── -->
+  <section id="panel-reviews" class="max-w-5xl mx-auto px-4 sm:px-6 pt-6 hidden">
+    <div class="flex gap-2 mb-2">
+      <button class="sub-tab sub-tab-active" data-subtab="review-messages" data-parent="reviews">Messages</button>
+      <button class="sub-tab" data-subtab="drafts" data-parent="reviews">Drafts</button>
+    </div>
+  </section>
 
+  <!-- ───── Sub-tab: Review Messages ───── -->
+  <section id="panel-review-messages" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
+    <div class="bg-white rounded-lg shadow overflow-x-auto">
+      <table class="w-full text-sm min-w-[600px]">
+        <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-3 text-left">Date</th>
+            <th class="px-4 py-3 text-left">To</th>
+            <th class="px-4 py-3 text-left">Type</th>
+            <th class="px-4 py-3 text-left">Message</th>
+            <th class="px-4 py-3 text-left">Status</th>
+          </tr>
+        </thead>
+        <tbody id="reviewMessagesBody" class="divide-y divide-gray-100"></tbody>
+      </table>
+      <p id="noReviewMessages" class="hidden text-center text-gray-400 py-8">No review messages yet.</p>
+    </div>
+  </section>
 
-  <!-- ───── Tab: Drafts ───── -->
+  <!-- ───── Sub-tab: Drafts ───── -->
   <section id="panel-drafts" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
 
     <div id="draftsGoogleWarning" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 text-sm text-amber-800">
@@ -425,8 +450,18 @@
     </div>
   </section>
 
-  <!-- ───── Tab: Messages ───── -->
-  <section id="panel-messages" class="max-w-5xl mx-auto px-6 py-6 hidden">
+  <!-- ───── Tab Group: Jobs ───── -->
+  <section id="panel-jobs" class="max-w-5xl mx-auto px-4 sm:px-6 pt-6 hidden">
+    <div class="flex gap-2 mb-2">
+      <button class="sub-tab sub-tab-active" data-subtab="invoices" data-parent="jobs">Invoices</button>
+      <button class="sub-tab" data-subtab="quotes" data-parent="jobs">Quotes</button>
+      <button class="sub-tab" data-subtab="bookings" data-parent="jobs">Bookings</button>
+      <button class="sub-tab" data-subtab="job-messages" data-parent="jobs">Messages</button>
+    </div>
+  </section>
+
+  <!-- ───── Sub-tab: Job Messages ───── -->
+  <section id="panel-job-messages" class="max-w-5xl mx-auto px-4 sm:px-6 py-6 hidden">
     <div class="bg-white rounded-lg shadow overflow-x-auto">
       <table class="w-full text-sm min-w-[600px]">
         <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
@@ -438,19 +473,9 @@
             <th class="px-4 py-3 text-left">Status</th>
           </tr>
         </thead>
-        <tbody id="messagesBody" class="divide-y divide-gray-100"></tbody>
+        <tbody id="jobMessagesBody" class="divide-y divide-gray-100"></tbody>
       </table>
-      <p id="noMessages" class="hidden text-center text-gray-400 py-8">No messages sent yet.</p>
-    </div>
-  </section>
-
-  <!-- ───── Tab Group: Jobs ───── -->
-  <section id="panel-jobs" class="max-w-5xl mx-auto px-4 sm:px-6 pt-6 hidden">
-    <div class="flex gap-2 mb-2">
-      <button class="sub-tab sub-tab-active" data-subtab="invoices" data-parent="jobs">Invoices</button>
-      <button class="sub-tab" data-subtab="quotes" data-parent="jobs">Quotes</button>
-      <button class="sub-tab" data-subtab="bookings" data-parent="jobs">Bookings</button>
-      <button class="sub-tab" data-subtab="messages" data-parent="jobs">Messages</button>
+      <p id="noJobMessages" class="hidden text-center text-gray-400 py-8">No job messages sent yet.</p>
     </div>
   </section>
 
@@ -977,12 +1002,10 @@ async function doLogout() {
 
 // ── Tabs ─────────────────────────────────────────
 const subTabGroups = {
-  jobs: ['invoices', 'quotes', 'bookings', 'messages'],
-  money: ['expenses', 'accounts', 'tax']
+  jobs: ['invoices', 'quotes', 'bookings', 'job-messages'],
+  money: ['expenses', 'accounts', 'tax'],
+  reviews: ['review-messages', 'drafts']
 };
-
-// Reviews tab maps directly to drafts panel
-const tabAliases = { reviews: 'drafts' };
 
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -1002,8 +1025,7 @@ document.querySelectorAll('.tab').forEach(tab => {
         else st.classList.remove('sub-tab-active');
       });
     } else {
-      const panelId = tabAliases[target] || target;
-      document.getElementById('panel-' + panelId).classList.remove('hidden');
+      document.getElementById('panel-' + target).classList.remove('hidden');
     }
   });
 });
@@ -1290,20 +1312,28 @@ async function loadCustomers() {
 }
 
 // ── Load messages table ──────────────────────────
+const REVIEW_MSG_TYPES = ['review_request', 'review_link', 'review_followup', 'auto_reply_notification', 'draft_notification', 'follow_up_sent'];
+
 async function loadMessages() {
   const res = await authFetch(API + '/messages');
   if (!res.ok) return;
   const messages = await res.json();
-  const tbody = document.getElementById('messagesBody');
-  tbody.innerHTML = '';
 
-  if (!messages.length) {
-    document.getElementById('noMessages').classList.remove('hidden');
-    return;
-  }
-  document.getElementById('noMessages').classList.add('hidden');
+  const reviewTbody = document.getElementById('reviewMessagesBody');
+  const jobTbody = document.getElementById('jobMessagesBody');
+  reviewTbody.innerHTML = '';
+  jobTbody.innerHTML = '';
 
-  messages.forEach(m => {
+  const reviewMsgs = messages.filter(m => REVIEW_MSG_TYPES.includes(m.message_type));
+  const jobMsgs = messages.filter(m => !REVIEW_MSG_TYPES.includes(m.message_type));
+
+  if (!reviewMsgs.length) document.getElementById('noReviewMessages').classList.remove('hidden');
+  else document.getElementById('noReviewMessages').classList.add('hidden');
+
+  if (!jobMsgs.length) document.getElementById('noJobMessages').classList.remove('hidden');
+  else document.getElementById('noJobMessages').classList.add('hidden');
+
+  function renderRow(m, tbody) {
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-gray-50';
     const date = m.created_at ? new Date(m.created_at).toLocaleString() : '—';
@@ -1316,7 +1346,10 @@ async function loadMessages() {
       <td class="px-4 py-3 text-green-600 font-medium text-xs">${m.status}</td>
     `;
     tbody.appendChild(tr);
-  });
+  }
+
+  reviewMsgs.forEach(m => renderRow(m, reviewTbody));
+  jobMsgs.forEach(m => renderRow(m, jobTbody));
 }
 
 // ── Load drafts table ────────────────────────────
