@@ -53,7 +53,11 @@ async def checkout_info(business_id: str) -> dict:
 
 @router.post("/web-signup")
 async def web_signup(body: WebSignupRequest) -> dict:
-    """Create an inactive business from the web signup form → redirect to checkout."""
+    """Create a business from the web signup form.
+
+    TEMP: paywall bypassed for testing — sets status to 'active' directly.
+    TODO: restore checkout redirect before going live.
+    """
     import uuid
     db = get_supabase()
 
@@ -74,12 +78,13 @@ async def web_signup(body: WebSignupRequest) -> dict:
                 status_code=409,
                 detail="This phone number already has an active account. Please login instead.",
             )
-        # Inactive — update and send to checkout
+        # Inactive — activate directly (TEMP: bypassing checkout)
         db.table("businesses").update({
             "business_name": body.business_name,
             "trade_type": body.trade_type,
+            "subscription_status": "active",
         }).eq("id", biz["id"]).execute()
-        return {"redirect_url": f"/checkout.html?business_id={biz['id']}"}
+        return {"redirect_url": f"/portal.html"}
 
     biz_id = str(uuid.uuid4())
     db.table("businesses").insert({
@@ -88,10 +93,10 @@ async def web_signup(body: WebSignupRequest) -> dict:
         "business_name": body.business_name,
         "phone_number": phone,
         "trade_type": body.trade_type,
-        "subscription_status": "inactive",
+        "subscription_status": "active",  # TEMP: bypassing paywall for testing
     }).execute()
 
-    return {"redirect_url": f"/checkout.html?business_id={biz_id}"}
+    return {"redirect_url": f"/portal.html"}
 
 
 # ── Create Stripe Checkout Session ────────────────────
