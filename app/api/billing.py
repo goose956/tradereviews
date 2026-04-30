@@ -87,6 +87,20 @@ async def web_signup(body: WebSignupRequest) -> dict:
     if existing.data:
         biz = existing.data[0]
         if biz["subscription_status"] == "active":
+            # Existing active account: for Telegram onboarding, auto-link and log in.
+            if body.telegram_chat_id:
+                db.table("businesses").update({
+                    "telegram_chat_id": body.telegram_chat_id,
+                }).eq("id", biz["id"]).execute()
+                session = _create_session(db, biz["id"])
+                biz_name = db.table("businesses").select("business_name").eq("id", biz["id"]).execute()
+                return {
+                    "redirect_url": "/portal.html",
+                    "token": session["token"],
+                    "business_id": biz["id"],
+                    "business_name": biz_name.data[0]["business_name"] if biz_name.data else body.business_name,
+                    "existing_account": True,
+                }
             raise HTTPException(
                 status_code=409,
                 detail="This phone number already has an active account. Please login instead.",
