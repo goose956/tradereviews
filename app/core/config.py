@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     twilio_phone_number: str = ""
     twilio_messaging_service_sid: str = ""  # Alphanumeric sender (e.g. "GafferApp")
 
+    # Telegram Bot
+    telegram_bot_token: str = ""          # From @BotFather
+    telegram_webhook_secret: str = ""     # Optional secret token for webhook verification
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

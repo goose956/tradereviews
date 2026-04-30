@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS businesses (
     followup_interval_days INTEGER NOT NULL DEFAULT 3,
     followup_max_count   INTEGER NOT NULL DEFAULT 2,
     followup_message     TEXT NOT NULL DEFAULT 'Hi {first_name}, just a quick reminder — we''d really appreciate your feedback! It only takes a minute. Thank you 😊',
+    telegram_chat_id     TEXT DEFAULT '',
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL
 );
@@ -297,6 +298,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "twilio_number" not in biz_cols:
         conn.execute("ALTER TABLE businesses ADD COLUMN twilio_number TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE businesses ADD COLUMN twilio_number_sid TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+    # Telegram integration
+    if "telegram_chat_id" not in biz_cols:
+        conn.execute("ALTER TABLE businesses ADD COLUMN telegram_chat_id TEXT DEFAULT ''")
         conn.commit()
 
     # Add sent_at to quotes (was missing)

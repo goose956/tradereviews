@@ -22,6 +22,7 @@ from app.api.cron import router as cron_router
 from app.api.member import router as member_router, public_router as member_public_router
 from app.api.oauth import router as oauth_router
 from app.api.webhooks import router as webhook_router
+from app.api.telegram_webhook import router as telegram_router
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,23 @@ FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application-wide resources (httpx client)."""
     app.state.http_client = httpx.AsyncClient(timeout=30.0)
+
+    # Register Telegram webhook if token is configured
+    from app.core.config import get_settings as _gs
+    from app.services.telegram import set_webhook as _tg_set_webhook
+    _settings = _gs()
+    if _settings.telegram_bot_token:
+        try:
+            webhook_url = f"{_settings.base_url.rstrip('/')}/webhook/telegram"
+            result = await _tg_set_webhook(
+                app.state.http_client,
+                webhook_url,
+                secret_token=_settings.telegram_webhook_secret,
+            )
+            logger.info("Telegram webhook registered: %s", result)
+        except Exception:
+            logger.exception("Failed to register Telegram webhook")
+
     yield
     await app.state.http_client.aclose()
 
@@ -54,6 +72,7 @@ app.add_middleware(
 )
 
 app.include_router(webhook_router)
+app.include_router(telegram_router)
 app.include_router(oauth_router)
 app.include_router(cron_router)
 app.include_router(billing_router)
