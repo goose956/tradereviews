@@ -33,6 +33,7 @@ class WebSignupRequest(BaseModel):
     business_name: str
     trade_type: str
     phone: str
+    telegram_chat_id: str = ""  # Passed from Telegram signup link for auto-linking
 
 
 # ── Public: checkout info (no auth — linked from WhatsApp) ────────────
@@ -79,24 +80,30 @@ async def web_signup(body: WebSignupRequest) -> dict:
                 detail="This phone number already has an active account. Please login instead.",
             )
         # Inactive — activate directly (TEMP: bypassing checkout)
-        db.table("businesses").update({
+        update_data: dict = {
             "business_name": body.business_name,
             "trade_type": body.trade_type,
             "subscription_status": "active",
-        }).eq("id", biz["id"]).execute()
-        return {"redirect_url": f"/portal.html"}
+        }
+        if body.telegram_chat_id:
+            update_data["telegram_chat_id"] = body.telegram_chat_id
+        db.table("businesses").update(update_data).eq("id", biz["id"]).execute()
+        return {"redirect_url": "/portal.html"}
 
     biz_id = str(uuid.uuid4())
-    db.table("businesses").insert({
+    insert_data: dict = {
         "id": biz_id,
         "owner_name": body.business_name,
         "business_name": body.business_name,
         "phone_number": phone,
         "trade_type": body.trade_type,
         "subscription_status": "active",  # TEMP: bypassing paywall for testing
-    }).execute()
+    }
+    if body.telegram_chat_id:
+        insert_data["telegram_chat_id"] = body.telegram_chat_id
+    db.table("businesses").insert(insert_data).execute()
 
-    return {"redirect_url": f"/portal.html"}
+    return {"redirect_url": "/portal.html"}
 
 
 # ── Create Stripe Checkout Session ────────────────────

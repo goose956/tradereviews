@@ -335,6 +335,7 @@
     const trade = document.getElementById('signupTrade').value;
     const cc = document.getElementById('signupCountryCode').value;
     let phone = document.getElementById('signupPhone').value.trim().replace(/[\s\-\(\)]/g, '');
+    const tgChatId = new URLSearchParams(window.location.search).get('tg') || '';
 
     if (!bizName || !trade || !phone) { showToast('Please fill in all fields.', 'error'); return; }
 
@@ -349,7 +350,7 @@
       const res = await fetch('/api/web-signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_name: bizName, trade_type: trade, phone: phone }),
+        body: JSON.stringify({ business_name: bizName, trade_type: trade, phone: phone, telegram_chat_id: tgChatId }),
       });
       const data = await res.json();
 
