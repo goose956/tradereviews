@@ -1,6 +1,8 @@
 """Stripe billing — checkout sessions, webhooks, cancellation & info."""
 
 import logging
+import secrets
+from datetime import datetime, timezone, timedelta
 import stripe
 
 from fastapi import APIRouter, HTTPException, Request, Depends
