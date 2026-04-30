@@ -36,6 +36,18 @@ class WebSignupRequest(BaseModel):
     telegram_chat_id: str = ""  # Passed from Telegram signup link for auto-linking
 
 
+def _create_session(db, business_id: str) -> dict:
+    """Create a 30-day auth session token for the given business."""
+    token = secrets.token_urlsafe(48)
+    expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    db.table("auth_sessions").insert({
+        "business_id": business_id,
+        "token": token,
+        "expires_at": expires,
+    }).execute()
+    return {"token": token, "expires_at": expires}
+
+
 # ── Public: checkout info (no auth — linked from WhatsApp) ────────────
 
 
@@ -88,7 +100,14 @@ async def web_signup(body: WebSignupRequest) -> dict:
         if body.telegram_chat_id:
             update_data["telegram_chat_id"] = body.telegram_chat_id
         db.table("businesses").update(update_data).eq("id", biz["id"]).execute()
-        return {"redirect_url": "/portal.html"}
+        session = _create_session(db, biz["id"])
+        biz_name = db.table("businesses").select("business_name").eq("id", biz["id"]).execute()
+        return {
+            "redirect_url": "/portal.html",
+            "token": session["token"],
+            "business_id": biz["id"],
+            "business_name": biz_name.data[0]["business_name"] if biz_name.data else body.business_name,
+        }
 
     biz_id = str(uuid.uuid4())
     insert_data: dict = {
@@ -102,8 +121,14 @@ async def web_signup(body: WebSignupRequest) -> dict:
     if body.telegram_chat_id:
         insert_data["telegram_chat_id"] = body.telegram_chat_id
     db.table("businesses").insert(insert_data).execute()
+    session = _create_session(db, biz_id)
 
-    return {"redirect_url": "/portal.html"}
+    return {
+        "redirect_url": "/portal.html",
+        "token": session["token"],
+        "business_id": biz_id,
+        "business_name": body.business_name,
+    }
 
 
 # ── Create Stripe Checkout Session ────────────────────

@@ -1,4 +1,4 @@
-"""WhatsApp OTP authentication for tradespeople."""
+"""WhatsApp/Telegram OTP authentication for tradespeople."""
 
 import secrets
 from datetime import datetime, timezone, timedelta
@@ -103,7 +103,7 @@ async def request_code(body: RequestCode, request: Request) -> dict:
     # Check that this phone belongs to a registered business
     # Business phones are stored with '+' prefix (e.g. +447870160777)
     phone_e164 = f"+{phone}"
-    biz = db.table("businesses").select("id, business_name").eq("phone_number", phone_e164).single().execute()
+    biz = db.table("businesses").select("id, business_name, telegram_chat_id").eq("phone_number", phone_e164).single().execute()
     if not biz.data:
         # Don't reveal if account exists — just say code sent
         return {"sent": True, "message": "If this number is registered, you'll receive a code on WhatsApp."}
@@ -123,15 +123,21 @@ async def request_code(body: RequestCode, request: Request) -> dict:
         "expires_at": expires,
     }).execute()
 
-    # Send OTP via WhatsApp
+    # Send OTP — via Telegram if linked, otherwise WhatsApp
     client: httpx.AsyncClient = request.app.state.http_client
     otp_message = f"🔐 Your GafferApp login code is: *{code}*\n\nThis code expires in {OTP_EXPIRY_MINUTES} minutes. Do not share it with anyone."
+    tg_chat_id = biz.data.get("telegram_chat_id", "")
     try:
-        await send_text_message(client, phone, otp_message)
+        if tg_chat_id:
+            from app.services.telegram import send_text as tg_send_text
+            await tg_send_text(client, tg_chat_id, otp_message)
+        else:
+            await send_text_message(client, phone, otp_message)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to send code. Please try again.")
 
-    return {"sent": True, "message": "If this number is registered, you'll receive a code on WhatsApp."}
+    channel_hint = "Telegram" if tg_chat_id else "WhatsApp"
+    return {"sent": True, "message": f"If this number is registered, you'll receive a code on {channel_hint}."}
 
 
 @router.post("/verify-code")

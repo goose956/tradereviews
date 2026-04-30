@@ -355,6 +355,12 @@
       const data = await res.json();
 
       if (res.ok && data.redirect_url) {
+        // Auto-login: store session token returned by signup
+        if (data.token) {
+          localStorage.setItem('re_token', data.token);
+          localStorage.setItem('re_business_id', data.business_id);
+          localStorage.setItem('re_business_name', data.business_name || '');
+        }
         showToast('Account created! Redirecting…', 'success');
         setTimeout(() => { window.location.href = data.redirect_url; }, 500);
       } else {
