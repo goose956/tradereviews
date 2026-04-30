@@ -322,6 +322,12 @@
     document.getElementById('step1').classList.remove('hidden');
   }
 
+  // Telegram onboarding can deep-link directly to signup mode.
+  const qp = new URLSearchParams(window.location.search);
+  if (qp.get('mode') === 'signup' || qp.get('signup') === '1') {
+    showSignup();
+  }
+
   // ── Create Account form ──
   document.getElementById('signupForm').addEventListener('submit', async (e) => {
     e.preventDefault();

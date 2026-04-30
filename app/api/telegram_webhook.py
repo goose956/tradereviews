@@ -165,6 +165,11 @@ def _format_phone_display(e164: str) -> str:
     return e164
 
 
+def _signup_url() -> str:
+    base = get_settings().base_url.rstrip("/")
+    return f"{base}/login.html?mode=signup"
+
+
 # ──────────────────────────────────────────────
 # Channel resolver (for outbound to customers)
 # ──────────────────────────────────────────────
@@ -309,7 +314,7 @@ async def _handle_text(chat_id: str, text: str, client: httpx.AsyncClient) -> No
             "👋 Welcome to *GafferApp*!\n\n"
             "Your Telegram isn't linked to an account yet.\n\n"
             "Type /link to connect your existing account, or visit "
-            f"{get_settings().base_url} to sign up.",
+            f"{_signup_url()} to sign up.",
         )
         return
 
@@ -373,7 +378,7 @@ async def _handle_link_phone(chat_id: str, phone_raw: str, client: httpx.AsyncCl
         await send_text(
             client, chat_id,
             f"⚠️ No GafferApp account found for *{phone_e164}*.\n\n"
-            f"Please check the number or visit {get_settings().base_url} to sign up.",
+            f"Please check the number or visit {_signup_url()} to sign up.",
         )
         return
 
@@ -471,11 +476,11 @@ async def _handle_callback_query(callback: dict[str, Any], client: httpx.AsyncCl
         return
 
     if payload == "onboard_signup":
-        settings = get_settings()
         await send_text(
             client, chat_id,
-            f"🚀 Sign up at:\n👉 {settings.base_url}\n\n"
-            f"Once signed up, come back and type /link to connect your account.",
+            f"🚀 Sign up here:\n👉 {_signup_url()}\n\n"
+            "On that page, tap *Create one free* to open the signup form.\n"
+            "Once signed up, come back and type /link to connect your account.",
         )
         return
 
