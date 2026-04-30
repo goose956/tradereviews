@@ -108,10 +108,10 @@
             <label class="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
             <div class="flex gap-2">
               <select id="signupCountryCode" class="border border-gray-300 rounded-lg px-3 py-2.5 bg-white focus:ring-2 focus:ring-green-500 outline-none text-sm w-24">
-                <option value="+44" selected>\uD83C\uDDEC\uD83C\uDDE7 +44</option>
-                <option value="+1">\uD83C\uDDFA\uD83C\uDDF8 +1</option>
-                <option value="+353">\uD83C\uDDEE\uD83C\uDDEA +353</option>
-                <option value="+61">\uD83C\uDDE6\uD83C\uDDFA +61</option>
+                <option value="+44" selected>UK +44</option>
+                <option value="+1">US +1</option>
+                <option value="+353">IE +353</option>
+                <option value="+61">AU +61</option>
               </select>
               <input id="signupPhone" type="tel" placeholder="7911 123456" required
                 class="flex-1 border border-gray-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-green-500 outline-none text-sm" />
@@ -328,19 +328,35 @@
     showSignup();
   }
 
+  function normalizeSignupPhone(rawPhone, countryCode) {
+    const clean = (rawPhone || '').trim().replace(/[\s\-\(\)]/g, '');
+    if (!clean) return '';
+
+    // Keep explicit international numbers as entered.
+    if (clean.startsWith('+')) return clean;
+    if (clean.startsWith('00')) return '+' + clean.substring(2);
+
+    const digits = clean.replace(/\D/g, '');
+    const ccDigits = (countryCode || '+44').replace('+', '');
+    if (!digits) return '';
+
+    // Accept input with or without leading 0 or already including country code.
+    if (digits.startsWith(ccDigits)) return '+' + digits;
+    if (digits.startsWith('0')) return '+' + ccDigits + digits.substring(1);
+    return '+' + ccDigits + digits;
+  }
+
   // ── Create Account form ──
   document.getElementById('signupForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const bizName = document.getElementById('signupBizName').value.trim();
     const trade = document.getElementById('signupTrade').value;
     const cc = document.getElementById('signupCountryCode').value;
-    let phone = document.getElementById('signupPhone').value.trim().replace(/[\s\-\(\)]/g, '');
+    const rawPhone = document.getElementById('signupPhone').value;
+    const phone = normalizeSignupPhone(rawPhone, cc);
     const tgChatId = new URLSearchParams(window.location.search).get('tg') || '';
 
     if (!bizName || !trade || !phone) { showToast('Please fill in all fields.', 'error'); return; }
-
-    if (phone.startsWith('0')) phone = phone.substring(1);
-    phone = cc + phone;
 
     const btn = document.getElementById('signupBtn');
     btn.disabled = true;
