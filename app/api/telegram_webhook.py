@@ -645,6 +645,26 @@ async def _wizard_handle_button(
     _start_timeout(chat_id, client)
     supabase = get_supabase()
 
+    def _has_customer_selected() -> bool:
+        return bool(session.get("customer_phone"))
+
+    def _requires_customer(action_payload: str) -> bool:
+        return action_payload in {"wiz_review", "wiz_invoice", "wiz_quote", "wiz_channel"}
+
+    if _requires_customer(payload) and not _has_customer_selected():
+        session["state"] = "choose_customer_type"
+        await send_buttons(
+            client,
+            chat_id,
+            "👤 This option needs a customer first.\n\nChoose one to continue:",
+            [
+                {"id": "wiz_new", "title": "➕ New Customer"},
+                {"id": "wiz_existing", "title": "📋 Existing Customer"},
+                {"id": "wiz_dashboard", "title": "💻 Open Dashboard"},
+            ],
+        )
+        return True
+
     if payload == "wiz_new":
         session["state"] = "awaiting_new_customer"
         await send_text(client, chat_id, "📝 Please type the customer's *name* and *phone number*.\n\nExample: *John Smith 07845774563*")
@@ -655,21 +675,13 @@ async def _wizard_handle_button(
         return True
 
     if payload == "wiz_menu":
-        await send_text(
-            client,
+        session["state"] = "choose_action"
+        session.setdefault("channel", "sms")
+        await _show_action_menu(
             chat_id,
-            "📚 *All GafferApp options*\n\n"
-            "• ⭐ Review Request\n"
-            "• 💷 Send Invoice\n"
-            "• 📋 Send Quote\n"
-            "• 🧾 Record Expense\n"
-            "• 📊 View Expenses\n"
-            "• 📅 New Booking\n"
-            "• 🗓 View Calendar\n"
-            "• 💰 Account Balance\n"
-            "• 💻 Open Dashboard\n"
-            "• 📲 Change Channel\n\n"
-            "Choose *New Customer* or *Existing Customer* to continue."
+            session,
+            client,
+            "📚 *Menu*\n\nTap an option below to continue.",
         )
         return True
 
