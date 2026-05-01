@@ -34,16 +34,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application-wide resources (httpx client)."""
     app.state.http_client = httpx.AsyncClient(timeout=30.0)
 
-    # Register Telegram webhook if token is configured
+    # Register Telegram webhook only when explicitly configured.
     from app.core.config import get_settings as _gs
     from app.services.telegram import set_webhook as _tg_set_webhook
     _settings = _gs()
-    if _settings.telegram_bot_token:
+    webhook_url = _settings.telegram_webhook_url.strip()
+    if _settings.telegram_bot_token and webhook_url:
         try:
-            webhook_url = (
-                _settings.telegram_webhook_url.strip()
-                or f"{_settings.base_url.rstrip('/')}/webhook/telegram"
-            )
             result = await _tg_set_webhook(
                 app.state.http_client,
                 webhook_url,
@@ -52,6 +49,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("Telegram webhook registered at %s: %s", webhook_url, result)
         except Exception:
             logger.exception("Failed to register Telegram webhook")
+    elif _settings.telegram_bot_token:
+        logger.info("Telegram webhook auto-registration skipped (set TELEGRAM_WEBHOOK_URL to enable)")
 
     yield
     await app.state.http_client.aclose()
