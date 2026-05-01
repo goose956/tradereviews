@@ -244,6 +244,19 @@ async def _show_action_menu(
 # POST /webhook/telegram
 # ──────────────────────────────────────────────
 
+@router.get("/ping")
+async def telegram_ping() -> dict:
+    """Diagnostic endpoint — confirms the Telegram webhook handler is alive."""
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "bot_token_set": bool(settings.telegram_bot_token),
+        "webhook_secret_set": bool(settings.telegram_webhook_secret),
+        "active_sessions": list(_wizard_sessions.keys()),
+        "pending_links": list(_pending_link.keys()),
+    }
+
+
 @router.post("", status_code=200)
 async def receive_telegram_update(request: Request) -> dict[str, str]:
     """Receive a Telegram update (message or callback_query)."""
@@ -252,14 +265,16 @@ async def receive_telegram_update(request: Request) -> dict[str, str]:
     if settings.telegram_webhook_secret:
         token = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
         if token != settings.telegram_webhook_secret:
-            logger.warning("Telegram webhook secret mismatch")
+            logger.warning("Telegram webhook secret mismatch — dropping update")
             return {"status": "ok"}  # return 200 to avoid Telegram retries
 
     body = await request.json()
+    logger.info("Telegram update received: %s", json.dumps(body)[:500])
     client: httpx.AsyncClient = request.app.state.http_client
 
     update_id: int = body.get("update_id", 0)
     if update_id and _is_duplicate(update_id):
+        logger.info("Duplicate update_id %s — skipping", update_id)
         return {"status": "ok"}
 
     try:
@@ -301,14 +316,15 @@ async def _handle_message(message: dict[str, Any], client: httpx.AsyncClient) ->
 async def _handle_text(chat_id: str, text: str, client: httpx.AsyncClient) -> None:
     lower = text.strip().lower()
 
+    # ── /start always wins — escape any stuck state ──
+    if lower.startswith("/start") or lower == "start":
+        _pending_link.pop(chat_id, None)  # clear any stuck link flow
+        await _handle_start(chat_id, text, client)
+        return
+
     # ── Pending phone link ──
     if chat_id in _pending_link:
         await _handle_link_phone(chat_id, text.strip(), client)
-        return
-
-    # ── Unlinked user commands ──
-    if lower in ("/start", "start"):
-        await _handle_start(chat_id, text, client)
         return
 
     if lower in ("/link", "link"):
@@ -436,7 +452,7 @@ async def _handle_tradesperson_text(
         )
         return
 
-    if upper in ("/START", "START") or upper.startswith("/START"):
+    if upper.startswith("/START") or upper == "START":
         await _wizard_start(chat_id, business, client)
         return
 
