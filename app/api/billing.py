@@ -4,6 +4,7 @@ import logging
 import secrets
 from datetime import datetime, timezone, timedelta
 import stripe
+import httpx
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import Response
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 from app.core.config import get_settings
 from app.db.supabase import get_supabase
 from app.api.auth import get_current_business
+from app.services.telegram import send_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["billing"])
@@ -48,6 +50,26 @@ def _create_session(db, business_id: str) -> dict:
         "expires_at": expires,
     }).execute()
     return {"token": token, "expires_at": expires}
+
+
+async def _send_telegram_welcome(chat_id: str) -> None:
+    """Send a welcome message to the user's Telegram chat after signup."""
+    if not chat_id:
+        return
+    try:
+        settings = get_settings()
+        if not settings.telegram_bot_token:
+            return
+        async with httpx.AsyncClient(timeout=10) as client:
+            await send_text(
+                client,
+                chat_id,
+                "✅ *Account Created!*\n\n"
+                "Your GafferApp account is ready to go.\n\n"
+                "Tap the button below to open the menu and start sending reviews, invoices, or quotes.",
+            )
+    except Exception:
+        logger.exception("Failed to send Telegram welcome message to %s", chat_id)
 
 
 # ── Public: checkout info (no auth — linked from WhatsApp) ────────────
@@ -96,6 +118,12 @@ async def web_signup(body: WebSignupRequest) -> dict:
                 }).eq("id", biz["id"]).execute()
                 session = _create_session(db, biz["id"])
                 biz_name = db.table("businesses").select("business_name").eq("id", biz["id"]).execute()
+                # Send welcome message to Telegram
+                import asyncio
+                try:
+                    asyncio.create_task(_send_telegram_welcome(body.telegram_chat_id))
+                except Exception:
+                    pass
                 return {
                     "redirect_url": "/portal.html",
                     "token": session["token"],
@@ -118,6 +146,12 @@ async def web_signup(body: WebSignupRequest) -> dict:
         db.table("businesses").update(update_data).eq("id", biz["id"]).execute()
         session = _create_session(db, biz["id"])
         biz_name = db.table("businesses").select("business_name").eq("id", biz["id"]).execute()
+        # Send welcome message to Telegram
+        import asyncio
+        try:
+            asyncio.create_task(_send_telegram_welcome(body.telegram_chat_id))
+        except Exception:
+            pass
         return {
             "redirect_url": "/portal.html",
             "token": session["token"],
@@ -138,6 +172,14 @@ async def web_signup(body: WebSignupRequest) -> dict:
         insert_data["telegram_chat_id"] = body.telegram_chat_id
     db.table("businesses").insert(insert_data).execute()
     session = _create_session(db, biz_id)
+    
+    # Send welcome message to Telegram
+    if body.telegram_chat_id:
+        import asyncio
+        try:
+            asyncio.create_task(_send_telegram_welcome(body.telegram_chat_id))
+        except Exception:
+            pass
 
     return {
         "redirect_url": "/portal.html",
