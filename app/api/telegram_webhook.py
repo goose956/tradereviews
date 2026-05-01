@@ -198,8 +198,16 @@ def _resolve_channel(channel: str, customer_phone: str, business_id: str) -> str
 # Action menu rows
 # ──────────────────────────────────────────────
 
-def _action_menu_rows(channel: str = "sms") -> list[dict]:
+def _action_menu_rows(channel: str = "sms", existing_customer_only: bool = False) -> list[dict]:
     ch_label = _CHANNEL_LABELS.get(channel, "💬 SMS")
+    if existing_customer_only:
+        return [
+            {"id": "wiz_review", "title": "⭐ Review Request"},
+            {"id": "wiz_invoice", "title": "💷 Send Invoice"},
+            {"id": "wiz_quote", "title": "📋 Send Quote"},
+            {"id": "wiz_dashboard", "title": "💻 Open Dashboard"},
+            {"id": "wiz_channel", "title": f"📲 Change Channel ({ch_label})"},
+        ]
     return [
         {"id": "wiz_review", "title": "⭐ Review Request"},
         {"id": "wiz_invoice", "title": "💷 Send Invoice"},
@@ -218,7 +226,10 @@ async def _show_action_menu(
     chat_id: str, session: dict, client: httpx.AsyncClient,
     prefix: str = "What would you like to do?",
 ) -> None:
-    rows = _action_menu_rows(session.get("channel", "sms"))
+    rows = _action_menu_rows(
+        session.get("channel", "sms"),
+        existing_customer_only=session.get("customer_source") == "existing",
+    )
     await send_list(
         client, chat_id,
         prefix,
@@ -781,6 +792,7 @@ async def _wizard_new_customer_input(
 
     session["customer_phone"] = parsed.phone
     session["customer_name"] = parsed.name
+    session["customer_source"] = "new"
     session["state"] = "choose_action"
     session.setdefault("channel", "sms")
 
@@ -846,6 +858,7 @@ async def _wizard_customer_selected(
 
     session["customer_phone"] = cust["phone_number"]
     session["customer_name"] = cust["name"]
+    session["customer_source"] = "existing"
     session["state"] = "choose_action"
     session.setdefault("channel", "sms")
 
