@@ -378,8 +378,29 @@ async def _handle_text(chat_id: str, text: str, client: httpx.AsyncClient) -> No
 # ──────────────────────────────────────────────
 
 async def _handle_start(chat_id: str, text: str, client: httpx.AsyncClient) -> None:
+    payload = ""
+    parts = text.strip().split(maxsplit=1)
+    if len(parts) > 1:
+        payload = parts[1].strip().lower()
+
     business = _get_business_by_chat_id(chat_id)
     if business:
+        if payload in {"menu", "openmenu", "mainmenu"}:
+            _wizard_end_session(chat_id)
+            session = {
+                "state": "choose_action",
+                "business_id": business["id"],
+                "channel": "sms",
+            }
+            _wizard_sessions[chat_id] = session
+            _start_timeout(chat_id, client)
+            await _show_action_menu(
+                chat_id,
+                session,
+                client,
+                "📚 *Menu ready*\n\nChoose an option below.",
+            )
+            return
         await _wizard_start(chat_id, business, client)
         return
 

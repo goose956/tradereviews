@@ -381,7 +381,7 @@
         }
         if (fromTelegramOnboarding) {
           showToast('Account linked. Returning to Telegram…', 'success');
-          setTimeout(() => { window.location.href = 'https://t.me/' + tgBotUsername; }, 700);
+          setTimeout(() => { window.location.href = 'https://t.me/' + tgBotUsername + '?start=menu'; }, 700);
         } else {
           showToast('Account created! Redirecting…', 'success');
           setTimeout(() => { window.location.href = data.redirect_url; }, 500);
