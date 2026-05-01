@@ -382,7 +382,7 @@
         if (fromTelegramOnboarding) {
           showToast('Account linked. Returning to Telegram…', 'success');
           setTimeout(() => {
-            window.location.href = 'https://t.me/' + tgBotUsername + '?start=menu';
+            window.location.href = 'https://t.me/' + tgBotUsername + '?start=home';
             setTimeout(() => { window.close(); }, 100);
           }, 700);
         } else {

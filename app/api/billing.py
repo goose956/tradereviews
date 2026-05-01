@@ -66,7 +66,7 @@ async def _send_telegram_welcome(chat_id: str) -> None:
                 chat_id,
                 "✅ *Account Created!*\n\n"
                 "Your GafferApp account is ready to go.\n\n"
-                "Tap the button below to open the menu and start sending reviews, invoices, or quotes.",
+                "You're all set. Head back here and tap *Start* to choose *New Customer*, *Existing Customer*, or *MENU*.",
             )
     except Exception:
         logger.exception("Failed to send Telegram welcome message to %s", chat_id)
