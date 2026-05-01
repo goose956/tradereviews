@@ -65,9 +65,6 @@ _wizard_sessions: dict[str, dict[str, Any]] = {}  # chat_id str → session
 _wizard_timeouts: dict[str, asyncio.Task] = {}
 _SESSION_TIMEOUT = 600
 
-# Pending link: user sent /link command — awaiting their phone number
-_pending_link: dict[str, bool] = {}  # chat_id → True
-
 _CHANNEL_LABELS = {
     "whatsapp": "📱 WhatsApp",
     "email": "📧 Email",
@@ -261,7 +258,6 @@ async def telegram_ping() -> dict:
         "configured_base_url": settings.base_url,
         "configured_webhook_url_override": settings.telegram_webhook_url,
         "active_sessions": list(_wizard_sessions.keys()),
-        "pending_links": list(_pending_link.keys()),
     }
 
 
@@ -326,24 +322,10 @@ async def _handle_text(chat_id: str, text: str, client: httpx.AsyncClient) -> No
 
     # ── /start always wins — escape any stuck state ──
     if lower.startswith("/start") or lower == "start":
-        _pending_link.pop(chat_id, None)  # clear any stuck link flow
         await _handle_start(chat_id, text, client)
         return
 
-    # ── Pending phone link ──
-    if chat_id in _pending_link:
-        await _handle_link_phone(chat_id, text.strip(), client)
-        return
 
-    if lower in ("/link", "link"):
-        _pending_link[chat_id] = True
-        await send_text(
-            client, chat_id,
-            "📱 Please type your *phone number* to link your GafferApp account.\n\n"
-            "Use the same number you signed up with.\n"
-            "Example: *07845 774563*",
-        )
-        return
 
     # ── Look up business ──
     business = _get_business_by_chat_id(chat_id)
@@ -352,9 +334,8 @@ async def _handle_text(chat_id: str, text: str, client: httpx.AsyncClient) -> No
         await send_text(
             client, chat_id,
             "👋 Welcome to *GafferApp*!\n\n"
-            "Your Telegram isn't linked to an account yet.\n\n"
-            "Type /link to connect your existing account, or visit "
-            f"{_signup_url(chat_id)} to sign up.",
+            "Visit to create your account:\n\n"
+            f"{_signup_url(chat_id)}",
         )
         return
 
@@ -412,9 +393,8 @@ async def _handle_start(chat_id: str, text: str, client: httpx.AsyncClient) -> N
         "👋 Welcome to *GafferApp*!\n\n"
         "The easiest way for tradespeople to get more Google reviews, "
         "send professional invoices, and run your business — all from Telegram.\n\n"
-        "Already have an account? Link it below. Or sign up to get started.",
+        "Create a free account to get started.",
         [
-            {"id": "onboard_link", "title": "🔗 Link My Account"},
             {"id": "onboard_signup", "title": "🚀 Sign Up"},
         ],
     )
@@ -527,15 +507,6 @@ async def _handle_callback_query(callback: dict[str, Any], client: httpx.AsyncCl
         return
 
     # Onboarding buttons (before account link)
-    if payload == "onboard_link":
-        _pending_link[chat_id] = True
-        await send_text(
-            client, chat_id,
-            "📱 Please type your *phone number* to link your GafferApp account.\n\n"
-            "Example: *07845 774563*",
-        )
-        return
-
     if payload == "onboard_signup":
         await send_text(
             client, chat_id,
