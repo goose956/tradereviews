@@ -61,3 +61,9 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
+
+
+def reload_settings() -> Settings:
+    """Clear the lru_cache and reload settings from environment."""
+    get_settings.cache_clear()
+    return get_settings()

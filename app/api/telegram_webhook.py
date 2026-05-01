@@ -247,10 +247,17 @@ async def _show_action_menu(
 @router.get("/ping")
 async def telegram_ping() -> dict:
     """Diagnostic endpoint — confirms the Telegram webhook handler is alive."""
+    import os
+    # Bypass lru_cache to read current env directly
+    raw_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    raw_secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+    # Also clear the cache so the app picks up new values
+    get_settings.cache_clear()
     settings = get_settings()
     return {
         "status": "ok",
         "bot_token_set": bool(settings.telegram_bot_token),
+        "bot_token_env_set": bool(raw_token),
         "webhook_secret_set": bool(settings.telegram_webhook_secret),
         "active_sessions": list(_wizard_sessions.keys()),
         "pending_links": list(_pending_link.keys()),
