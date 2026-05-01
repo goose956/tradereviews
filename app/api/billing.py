@@ -118,12 +118,7 @@ async def web_signup(body: WebSignupRequest) -> dict:
                 }).eq("id", biz["id"]).execute()
                 session = _create_session(db, biz["id"])
                 biz_name = db.table("businesses").select("business_name").eq("id", biz["id"]).execute()
-                # Send welcome message to Telegram
-                import asyncio
-                try:
-                    asyncio.create_task(_send_telegram_welcome(body.telegram_chat_id))
-                except Exception:
-                    pass
+                await _send_telegram_welcome(body.telegram_chat_id)
                 return {
                     "redirect_url": "/portal.html",
                     "token": session["token"],
@@ -146,12 +141,7 @@ async def web_signup(body: WebSignupRequest) -> dict:
         db.table("businesses").update(update_data).eq("id", biz["id"]).execute()
         session = _create_session(db, biz["id"])
         biz_name = db.table("businesses").select("business_name").eq("id", biz["id"]).execute()
-        # Send welcome message to Telegram
-        import asyncio
-        try:
-            asyncio.create_task(_send_telegram_welcome(body.telegram_chat_id))
-        except Exception:
-            pass
+        await _send_telegram_welcome(body.telegram_chat_id)
         return {
             "redirect_url": "/portal.html",
             "token": session["token"],
@@ -173,13 +163,8 @@ async def web_signup(body: WebSignupRequest) -> dict:
     db.table("businesses").insert(insert_data).execute()
     session = _create_session(db, biz_id)
     
-    # Send welcome message to Telegram
     if body.telegram_chat_id:
-        import asyncio
-        try:
-            asyncio.create_task(_send_telegram_welcome(body.telegram_chat_id))
-        except Exception:
-            pass
+        await _send_telegram_welcome(body.telegram_chat_id)
 
     return {
         "redirect_url": "/portal.html",

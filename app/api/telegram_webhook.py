@@ -165,6 +165,8 @@ def _format_phone_display(e164: str) -> str:
 def _signup_url(chat_id: str = "") -> str:
     settings = get_settings()
     base = (settings.telegram_signup_base_url or settings.base_url).rstrip("/")
+    if not settings.telegram_signup_base_url and base == "https://gafferapp.uk":
+        base = "https://tradereviews-production.up.railway.app"
     url = f"{base}/login.html?mode=signup"
     if chat_id:
         url += f"&tg={chat_id}"
