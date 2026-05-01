@@ -52,6 +52,20 @@ def _create_session(db, business_id: str) -> dict:
     return {"token": token, "expires_at": expires}
 
 
+def _link_telegram_chat_id(db, business_id: str, chat_id: str) -> None:
+    """Ensure one Telegram chat is linked to exactly one business."""
+    if not chat_id:
+        return
+
+    db.table("businesses").update({
+        "telegram_chat_id": "",
+    }).eq("telegram_chat_id", chat_id).execute()
+
+    db.table("businesses").update({
+        "telegram_chat_id": chat_id,
+    }).eq("id", business_id).execute()
+
+
 async def _send_telegram_welcome(chat_id: str) -> None:
     """Send a welcome message to the user's Telegram chat after signup."""
     if not chat_id:
@@ -113,9 +127,7 @@ async def web_signup(body: WebSignupRequest) -> dict:
         if biz["subscription_status"] == "active":
             # Existing active account: for Telegram onboarding, auto-link and log in.
             if body.telegram_chat_id:
-                db.table("businesses").update({
-                    "telegram_chat_id": body.telegram_chat_id,
-                }).eq("id", biz["id"]).execute()
+                _link_telegram_chat_id(db, biz["id"], body.telegram_chat_id)
                 session = _create_session(db, biz["id"])
                 biz_name = db.table("businesses").select("business_name").eq("id", biz["id"]).execute()
                 await _send_telegram_welcome(body.telegram_chat_id)
@@ -136,9 +148,9 @@ async def web_signup(body: WebSignupRequest) -> dict:
             "trade_type": body.trade_type,
             "subscription_status": "active",
         }
-        if body.telegram_chat_id:
-            update_data["telegram_chat_id"] = body.telegram_chat_id
         db.table("businesses").update(update_data).eq("id", biz["id"]).execute()
+        if body.telegram_chat_id:
+            _link_telegram_chat_id(db, biz["id"], body.telegram_chat_id)
         session = _create_session(db, biz["id"])
         biz_name = db.table("businesses").select("business_name").eq("id", biz["id"]).execute()
         await _send_telegram_welcome(body.telegram_chat_id)
@@ -158,9 +170,9 @@ async def web_signup(body: WebSignupRequest) -> dict:
         "trade_type": body.trade_type,
         "subscription_status": "active",  # TEMP: bypassing paywall for testing
     }
-    if body.telegram_chat_id:
-        insert_data["telegram_chat_id"] = body.telegram_chat_id
     db.table("businesses").insert(insert_data).execute()
+    if body.telegram_chat_id:
+        _link_telegram_chat_id(db, biz_id, body.telegram_chat_id)
     session = _create_session(db, biz_id)
     
     if body.telegram_chat_id:

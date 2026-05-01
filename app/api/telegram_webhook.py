@@ -126,6 +126,7 @@ def _get_business_by_chat_id(chat_id: str) -> dict | None:
         supabase.table("businesses")
         .select("*")
         .eq("telegram_chat_id", chat_id)
+        .order("updated_at", desc=True)
         .limit(1)
         .execute()
     )
