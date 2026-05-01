@@ -585,6 +585,7 @@ async def _wizard_start(
         [
             {"id": "wiz_new", "title": "➕ New Customer"},
             {"id": "wiz_existing", "title": "📋 Existing Customer"},
+            {"id": "wiz_menu", "title": "📚 MENU"},
             {"id": "wiz_dashboard", "title": "💻 Open Dashboard"},
         ],
     )
@@ -651,6 +652,25 @@ async def _wizard_handle_button(
 
     if payload == "wiz_existing":
         await _wizard_show_existing_customers(chat_id, session, business, client)
+        return True
+
+    if payload == "wiz_menu":
+        await send_text(
+            client,
+            chat_id,
+            "📚 *All GafferApp options*\n\n"
+            "• ⭐ Review Request\n"
+            "• 💷 Send Invoice\n"
+            "• 📋 Send Quote\n"
+            "• 🧾 Record Expense\n"
+            "• 📊 View Expenses\n"
+            "• 📅 New Booking\n"
+            "• 🗓 View Calendar\n"
+            "• 💰 Account Balance\n"
+            "• 💻 Open Dashboard\n"
+            "• 📲 Change Channel\n\n"
+            "Choose *New Customer* or *Existing Customer* to continue."
+        )
         return True
 
     if payload.startswith("wiz_cust_"):
