@@ -173,10 +173,15 @@
   </footer>
 
 <script>
+  const qp = new URLSearchParams(window.location.search);
+  const tgChatId = qp.get('tg') || '';
+  const fromTelegramOnboarding = !!tgChatId;
+  const tgBotUsername = 'Gafferappbot';
+
   // If already logged in, redirect to portal
   const existingToken = localStorage.getItem('re_token');
   const existingBizId = localStorage.getItem('re_business_id');
-  if (existingToken && existingBizId) {
+  if (existingToken && existingBizId && !fromTelegramOnboarding) {
     // Verify the token is still valid
     fetch('/auth/me', { headers: { 'Authorization': 'Bearer ' + existingToken } })
       .then(r => { if (r.ok) window.location.href = '/portal.html?business_id=' + existingBizId; })
@@ -323,7 +328,6 @@
   }
 
   // Telegram onboarding can deep-link directly to signup mode.
-  const qp = new URLSearchParams(window.location.search);
   if (qp.get('mode') === 'signup' || qp.get('signup') === '1') {
     showSignup();
   }
@@ -354,8 +358,6 @@
     const cc = document.getElementById('signupCountryCode').value;
     const rawPhone = document.getElementById('signupPhone').value;
     const phone = normalizeSignupPhone(rawPhone, cc);
-    const tgChatId = new URLSearchParams(window.location.search).get('tg') || '';
-
     if (!bizName || !trade || !phone) { showToast('Please fill in all fields.', 'error'); return; }
 
     const btn = document.getElementById('signupBtn');
@@ -377,8 +379,13 @@
           localStorage.setItem('re_business_id', data.business_id);
           localStorage.setItem('re_business_name', data.business_name || '');
         }
-        showToast('Account created! Redirecting…', 'success');
-        setTimeout(() => { window.location.href = data.redirect_url; }, 500);
+        if (fromTelegramOnboarding) {
+          showToast('Account linked. Returning to Telegram…', 'success');
+          setTimeout(() => { window.location.href = 'https://t.me/' + tgBotUsername; }, 700);
+        } else {
+          showToast('Account created! Redirecting…', 'success');
+          setTimeout(() => { window.location.href = data.redirect_url; }, 500);
+        }
       } else {
         showToast(data.detail || 'Something went wrong. Please try again.', 'error');
         btn.disabled = false;
