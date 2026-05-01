@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # App
     base_url: str = "https://yourdomain.com"
     telegram_signup_base_url: str = ""  # Optional override for Telegram signup links
+    telegram_webhook_url: str = ""      # Optional full webhook URL override
 
     # Encryption
     encryption_key: str = ""

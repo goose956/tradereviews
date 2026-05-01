@@ -258,6 +258,8 @@ async def telegram_ping() -> dict:
         "bot_token_set": bool(settings.telegram_bot_token),
         "bot_token_env_set": bool(raw_token),
         "webhook_secret_set": bool(settings.telegram_webhook_secret),
+        "configured_base_url": settings.base_url,
+        "configured_webhook_url_override": settings.telegram_webhook_url,
         "active_sessions": list(_wizard_sessions.keys()),
         "pending_links": list(_pending_link.keys()),
     }
